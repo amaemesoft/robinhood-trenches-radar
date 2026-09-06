@@ -10,6 +10,7 @@ const LiveSubscriber=require('./lib/liveSubscriber');
 const AlchemyWebhook=require('./lib/alchemyWebhook');
 const {TokenIntelligence}=require('./lib/tokenIntelligence');
 const Performance=require('./lib/performance');
+const TokenIdentity=require('./lib/tokenIdentity');
 
 const PORT=Number(process.env.PORT||8787);
 const DATABASE_URL=process.env.DATABASE_URL||'';
@@ -93,7 +94,7 @@ function staticFile(res,p){let rel=p==='/'?'index.html':p.replace(/^\//,'');rel=
 function actorMap(){const out={};for(const a of db.actors){a.adaptiveScore=Engine.adaptiveActorScore(a);a.division=Engine.division(a.sampleSize||a.calls||0,a.kind);out[a.id]=a}return out}
 function moneyWalletMap(){return new Map(db.actors.filter(a=>a.kind==='money'&&a.enabled!==false&&/^0x[a-fA-F0-9]{40}$/.test(a.evmAddress||'')).map(a=>[a.evmAddress.toLowerCase(),a]));}
 function calibration(){return Performance.calibrationReport(Object.values(actorMap()),db.events,db.marketHistory||{});}
-function signals(){const actors=actorMap(),groups=new Map(),cut=Date.now()-24*3600e3;for(const e of db.events){if(new Date(e.at).getTime()<cut)continue;(groups.get(e.tokenAddress)||groups.set(e.tokenAddress,[]).get(e.tokenAddress)).push(e)}const out=[];for(const[address,events]of groups){const st=db.tokenState[address]||{};const latest=[...events].sort((a,b)=>new Date(b.at)-new Date(a.at))[0];const result=Engine.evaluateToken({events,actors,safety:st.safety||{},execution:{...(st.execution||{}),currentMarketCap:st.marketCap||latest.marketCap||null},token:{marketCap:st.marketCap||latest.marketCap||null}});out.push({tokenAddress:address,symbol:latest.symbol||address.slice(0,8),lastSeen:latest.at,events,...result,liquidityUsd:st.execution?.liquidityUsd||null,priceUsd:st.priceUsd||null,exitabilityTargetUsd:st.execution?.exitabilityTargetUsd||null,sellImpactPct:st.execution?.sellImpactPct??null,exitQuotes:st.execution?.exitQuotes||[],safetyEvidence:st.safetyEvidence||null})}return out.sort((a,b)=>b.score-a.score)}
+function signals(){const actors=actorMap(),groups=new Map(),cut=Date.now()-24*3600e3;for(const e of db.events){if(new Date(e.at).getTime()<cut)continue;(groups.get(e.tokenAddress)||groups.set(e.tokenAddress,[]).get(e.tokenAddress)).push(e)}const out=[];for(const[address,events]of groups){const st=db.tokenState[address]||{};const latest=[...events].sort((a,b)=>new Date(b.at)-new Date(a.at))[0];let result=Engine.evaluateToken({events,actors,safety:st.safety||{},execution:{...(st.execution||{}),currentMarketCap:st.marketCap||latest.marketCap||null},token:{marketCap:st.marketCap||latest.marketCap||null}});const socialOnly=events.every(e=>e.action==='SCOUT');if(socialOnly&&st.contractExists===false)result={...result,state:'IGNORE',reason:'not_robinhood_contract'};const ticker=st.tokenSymbol||latest.symbol||null;const name=st.tokenName||null;out.push({tokenAddress:address,name,ticker,symbol:TokenIdentity.displayLabel(name,ticker,address),contractExists:st.contractExists??null,lastSeen:latest.at,events,...result,liquidityUsd:st.execution?.liquidityUsd||null,priceUsd:st.priceUsd||null,exitabilityTargetUsd:st.execution?.exitabilityTargetUsd||null,sellImpactPct:st.execution?.sellImpactPct??null,exitQuotes:st.execution?.exitQuotes||[],safetyEvidence:st.safetyEvidence||null})}return out.sort((a,b)=>b.score-a.score)}
 function dashboard(){const actors=Object.values(actorMap()),ss=signals(),cal=calibration();return{generatedAt:new Date().toISOString(),summary:{actors:actors.length,money:actors.filter(a=>a.kind==='money').length,social:actors.filter(a=>a.kind==='social').length,resolved:actors.filter(a=>a.evmAddress).length,entryCandidates:ss.filter(s=>['ENTRY_CANDIDATE','HIGH_CONFLUENCE'].includes(s.state)).length,distribution:ss.filter(s=>s.state==='DISTRIBUTION').length},signals:ss,recentEvents:db.events.slice(0,100),actors:actors.sort((a,b)=>b.adaptiveScore-a.adaptiveScore),calibration:cal,sync:db.sync}}
 
 function recordMarketSnapshot(address,state){
@@ -144,13 +145,16 @@ async function storeEvents(rows,tokenStates={}){
 }
 
 async function buildTokenState(token,force=false){
-  const m=await scanner.market(token,force);
+  const [m,identity]=await Promise.all([
+    scanner.market(token,force),
+    TokenIdentity.resolveTokenIdentity(scanner.rpc.bind(scanner),token)
+  ]);
   const marketState=m?{
     marketCap:m.marketCap,priceUsd:m.priceUsd,priceNative:m.priceNative,fdv:m.fdv,
     execution:{liquidityUsd:m.liquidityUsd,pairAddress:m.pairAddress,dexId:m.dexId,quoteTokenAddress:m.quoteTokenAddress,marketSource:m.marketSource}
   }:{};
   const intel=await intelligence.inspect(token,m||{},{force});
-  return{...marketState,...intel,observedAt:new Date().toISOString(),execution:{...(marketState.execution||{}),...(intel.execution||{})}};
+  return{...marketState,...intel,tokenName:identity.name,tokenSymbol:identity.symbol,contractExists:identity.contractExists,observedAt:new Date().toISOString(),execution:{...(marketState.execution||{}),...(intel.execution||{})}};
 }
 
 async function enrichTokens(tokens){
