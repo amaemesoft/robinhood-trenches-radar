@@ -21,59 +21,70 @@
 
     <main>
       <section class="hero">
-        <span class="eyebrow">RADAR AHORA</span>
+        <span class="eyebrow">DECISIÓN DEL RADAR</span>
         <h2 id="headline">Comprobando señales…</h2>
-        <p id="fresh">Conectando con el feed on-chain.</p>
-        <div class="metrics">
-          <div><span>Wallets on-chain</span><b id="money">—</b></div>
-          <div><span>Compras verificadas</span><b id="verified">—</b></div>
-          <div><span>Entradas ahora</span><b id="entries">—</b></div>
-          <div><span>Distribución</span><b id="dist">—</b></div>
+        <p id="decisionNote" class="decision-note">Buscando confluencia entre scouts y money wallets sin perseguir precio.</p>
+        <div class="metrics decision-metrics">
+          <div><span>Entradas para revisar</span><b id="entries">—</b></div>
+          <div><span>En vigilancia</span><b id="watching">—</b></div>
+          <div><span>Alertas de salida</span><b id="dist">—</b></div>
         </div>
-        <p id="systemMeta" class="system-meta">—</p>
-        <span id="resolved" hidden>—</span>
+        <p id="fresh" class="feed-line">Conectando con el feed.</p>
+        <details class="hero-tech">
+          <summary>Estado del motor</summary>
+          <div class="hero-tech-grid">
+            <span>Wallets on-chain <b id="money">—</b></span>
+            <span>Compras verificadas <b id="verified">—</b></span>
+          </div>
+          <p id="systemMeta" class="system-meta">—</p>
+        </details>
       </section>
 
-      <section class="section">
+      <section class="section priority-section">
         <div class="section-head">
-          <div><span class="eyebrow">PRIORIDAD</span><h2>Qué merece atención</h2></div>
+          <div><span class="eyebrow">AHORA MISMO</span><h2>Qué merece atención</h2></div>
           <span id="signalCount" class="count-pill">0</span>
         </div>
+        <p class="section-copy priority-copy">Primero ves la decisión. Debajo, las evidencias que la justifican. Los datos técnicos quedan plegados.</p>
         <div id="signals" class="stack"></div>
         <details id="observationsPanel" class="fold" hidden>
           <summary><span>Observaciones sin señal</span><strong id="ignoredCount">0</strong></summary>
-          <p>Movimientos on-chain detectados que no son una compra/entrada económica verificada. No suman Alpha.</p>
+          <p>Movimientos detectados que todavía no constituyen una entrada económica verificable.</p>
           <div id="observations" class="stack compact"></div>
         </details>
       </section>
 
-      <section class="section">
+      <section class="section secondary-section">
         <div class="section-head">
-          <div><span class="eyebrow">FUENTES</span><h2>Quién estamos siguiendo</h2></div>
+          <div><span class="eyebrow">EVIDENCIA</span><h2>Fuentes y aprendizaje</h2></div>
         </div>
-        <p class="section-copy">El score mostrado aquí es un <b>score provisional de fuente</b>, no rentabilidad ni PnL. Se irá sustituyendo por rendimiento medido cuando haya compras verificadas.</p>
-        <div id="actors" class="stack"></div>
-        <details id="socialPanel" class="fold" hidden>
-          <summary><span>Fuentes sociales pendientes</span><strong id="socialCount">0</strong></summary>
-          <p>Aún no alimentan señales live hasta conectar Social Radar. Se conservan como Candidate Pool.</p>
+        <p class="section-copy">La pantalla principal no necesita enseñarte una lista de traders. Aquí puedes abrirla cuando quieras comprobar de dónde sale una señal.</p>
+
+        <details class="fold source-fold">
+          <summary><span>Money wallets on-chain</span><strong id="moneyCount">0</strong></summary>
+          <p>Estas fuentes sí pueden aportar evidencia económica de entrada, siempre que la transacción sea clasificable como BUY/CALL/ADD/REENTRY.</p>
+          <div id="actors" class="stack compact"></div>
+        </details>
+
+        <details id="socialPanel" class="fold source-fold" hidden>
+          <summary><span>Scouts sociales monitorizados</span><strong id="socialCount">0</strong></summary>
+          <p>Ya alimentan descubrimiento temprano desde feeds públicos. Mejoran prioridad y contexto, pero nunca sustituyen una compra on-chain verificada.</p>
           <div id="socialActors" class="stack compact"></div>
         </details>
-      </section>
 
-      <section class="section">
-        <div class="section-head">
-          <div><span class="eyebrow">APRENDIZAJE</span><h2>Calibración real</h2></div>
-        </div>
-        <div id="calibration" class="stack"></div>
+        <details class="fold source-fold">
+          <summary><span>Cómo está aprendiendo el radar</span><strong>↗</strong></summary>
+          <div id="calibration" class="stack compact"></div>
+        </details>
       </section>
 
       <details class="fold help">
         <summary><span>Qué significa cada indicador</span><strong>?</strong></summary>
         <div class="legend">
-          <p><b>Alpha</b> · Fuerza de la confluencia de entradas verificadas. Si no existe una compra/call válida, se muestra “—”, no 0.</p>
+          <p><b>Alpha</b> · Solo mide fuerza de entradas económicas verificadas. Una mención social no crea Alpha.</p>
+          <p><b>Descubrimiento</b> · Fuerza de la evidencia social temprana. Sirve para priorizar qué mirar antes, no para autorizar una entrada.</p>
           <p><b>Safety</b> · Riesgos críticos del contrato y del pool. UNKNOWN nunca equivale a PASS.</p>
           <p><b>Salida</b> · Capacidad de vender el tamaño objetivo sin impacto excesivo.</p>
-          <p><b>Score de fuente</b> · Prior provisional basado en identidad, rol, copyability, actividad y muestra. No es performance.</p>
         </div>
       </details>
 
