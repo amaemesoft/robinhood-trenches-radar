@@ -2,7 +2,7 @@
 
 const $=selector=>document.querySelector(selector);
 const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({
-  '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'
+  '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
 }[char]));
 const money=value=>value==null?'—':Number(value)>=1e6
   ?'$'+(Number(value)/1e6).toFixed(2)+'M'
