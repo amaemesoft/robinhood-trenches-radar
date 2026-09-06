@@ -7,7 +7,8 @@ const Engine=require('../lib/engine');
 const PASS={tokenControl:'PASS',upgradeAuthority:'PASS',canonicalLp:'PASS',sellRestriction:'PASS'};
 const actors={
   alpha:{roleScores:{execution:90},identityConfidence:'verified'},
-  beta:{roleScores:{execution:85},identityConfidence:'verified'}
+  beta:{roleScores:{execution:85},identityConfidence:'verified'},
+  scout:{roleScores:{discovery:90},identityConfidence:'unresolved'}
 };
 
 test('receive-only ACQUIRE fan-out is not entry confluence',()=>{
@@ -19,6 +20,37 @@ test('receive-only ACQUIRE fan-out is not entry confluence',()=>{
   assert.equal(result.reason,'no_entry_evidence');
   assert.equal(result.independentActors,0);
   assert.equal(result.alpha,0);
+});
+
+test('social SCOUT creates WATCH without creating Alpha',()=>{
+  const result=Engine.evaluateToken({events:[{actorId:'scout',action:'SCOUT'}],actors,safety:{}});
+  assert.equal(result.state,'WATCH');
+  assert.equal(result.reason,'social_scout_only');
+  assert.equal(result.independentActors,0);
+  assert.equal(result.scoutActors,1);
+  assert.equal(result.alpha,0);
+});
+
+test('multiple social SCOUTs still cannot become an entry signal',()=>{
+  const events=[{actorId:'scout',action:'SCOUT'},{actorId:'beta',action:'SCOUT'}];
+  const result=Engine.evaluateToken({events,actors,safety:PASS,execution:{sellImpactPct:1,liquidityUsd:500000}});
+  assert.equal(result.state,'WATCH');
+  assert.equal(result.reason,'social_scout_only');
+  assert.equal(result.scoutActors,2);
+  assert.equal(result.independentActors,0);
+  assert.equal(result.alpha,0);
+});
+
+test('social SCOUT does not satisfy second independent economic actor requirement',()=>{
+  const events=[
+    {actorId:'alpha',action:'BUY',txHash:'0xone',signalRole:'execution'},
+    {actorId:'scout',action:'SCOUT'}
+  ];
+  const result=Engine.evaluateToken({events,actors,safety:PASS,execution:{sellImpactPct:1,liquidityUsd:500000}});
+  assert.equal(result.state,'WATCH');
+  assert.equal(result.reason,'needs_second_independent_actor');
+  assert.equal(result.independentActors,1);
+  assert.equal(result.scoutActors,1);
 });
 
 test('same-transaction fan-out collapses actors into one independent source',()=>{
