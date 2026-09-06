@@ -30,16 +30,19 @@ test('matured misses reduce Discovery without letting one small sample dominate'
 });
 
 test('engine uses measured social Discovery but still creates zero Alpha',()=>{
-  const actor={
+  const measuredActor={
     id:'scout',kind:'social',role:'discovery',roleScores:{discovery:20},measuredDiscoveryScore:90
   };
-  const result=Engine.evaluateToken({
-    events:[{actorId:'scout',action:'SCOUT',tokenAddress:'0x1111111111111111111111111111111111111111'}],
-    actors:{scout:actor}
-  });
+  const staticActor={
+    id:'scout',kind:'social',role:'discovery',roleScores:{discovery:20}
+  };
+  const events=[{actorId:'scout',action:'SCOUT',tokenAddress:'0x1111111111111111111111111111111111111111'}];
+  const result=Engine.evaluateToken({events,actors:{scout:measuredActor}});
+  const staticResult=Engine.evaluateToken({events,actors:{scout:staticActor}});
   assert.equal(result.state,'WATCH');
   assert.equal(result.reason,'social_scout_only');
-  assert.equal(result.discovery,90);
+  assert.equal(result.discovery,47);
+  assert.ok(result.discovery>staticResult.discovery);
   assert.equal(result.alpha,0);
   assert.equal(result.independentActors,0);
 });
