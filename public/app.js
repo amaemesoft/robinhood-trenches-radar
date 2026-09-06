@@ -8,75 +8,152 @@ const money=value=>value==null?'—':Number(value)>=1e6
   ?'$'+(Number(value)/1e6).toFixed(2)+'M'
   :Number(value)>=1e3?'$'+(Number(value)/1e3).toFixed(1)+'K':'$'+Number(value).toFixed(0);
 const ago=value=>{
-  if(!value)return'no sync yet';
-  const minutes=Math.floor((Date.now()-new Date(value))/60000);
-  return minutes<1?'ahora':minutes<60?minutes+'m':Math.floor(minutes/60)+'h';
+  if(!value)return'sin sincronizar';
+  const minutes=Math.max(0,Math.floor((Date.now()-new Date(value))/60000));
+  if(minutes<1)return'ahora';
+  if(minutes<60)return`hace ${minutes} min`;
+  const hours=Math.floor(minutes/60);
+  if(hours<24)return`hace ${hours} h`;
+  return`hace ${Math.floor(hours/24)} d`;
 };
-const label=value=>({
-  ENTRY_CANDIDATE:'ENTRY CANDIDATE',HIGH_CONFLUENCE:'HIGH CONFLUENCE',DO_NOT_CHASE:'DO NOT CHASE',
-  DISTRIBUTION:'DISTRIBUTION',BLOCKED:'BLOCKED',WATCH:'WATCH',
-  INSUFFICIENT_VERIFIED_ENTRIES:'MUESTRA INSUFICIENTE',BUILDING_FORWARD_RETURNS:'CONSTRUYENDO RETORNOS',
+const stateLabel=value=>({
+  ENTRY_CANDIDATE:'REVISAR ENTRADA',HIGH_CONFLUENCE:'ALTA CONFLUENCIA',DO_NOT_CHASE:'NO PERSEGUIR',
+  DISTRIBUTION:'DISTRIBUCIÓN',BLOCKED:'BLOQUEADO',WATCH:'VIGILAR',IGNORE:'SOLO OBSERVADO'
+}[value]||value);
+const calibrationLabel=value=>({
+  INSUFFICIENT_VERIFIED_ENTRIES:'SIN COMPRAS VERIFICADAS',BUILDING_FORWARD_RETURNS:'CONSTRUYENDO RETORNOS',
   CALIBRATION_ACTIVE:'CALIBRACIÓN ACTIVA',NO_VERIFIED_ENTRIES:'SIN ENTRADAS VERIFICADAS',
   BUILDING_RETURNS:'CONSTRUYENDO MUESTRA',TESTED_READY:'TESTED',CORE_READY:'CORE'
 }[value]||value);
+const gateLabel=value=>({PASS:'OK',CAUTION:'CAUTELA',FAIL:'BLOQUEADO',UNKNOWN:'SIN CONFIRMAR'}[value]||value||'SIN CONFIRMAR');
+const roleLabel=value=>({discovery:'descubrimiento',confirmation:'confirmación',execution:'ejecución',reentry:'reentrada',narrative:'narrativa'}[value]||value||'—');
+const reasonText=value=>({
+  no_entry_evidence:'Movimiento observado, pero no hay una entrada económica verificada.',
+  critical_unknown:'Faltan datos críticos de Safety; todavía no puede convertirse en entrada.',
+  needs_second_independent_actor:'Hay una entrada válida, pero falta un segundo actor independiente.',
+  exitability_unknown:'No hay una cotización de salida fiable todavía.',
+  entry_window_missed:'La confluencia existe, pero el precio ya se alejó demasiado de la primera entrada.',
+  high_confluence:'Confluencia fuerte con Safety y salida verificadas.',
+  alpha_safety_execution_align:'Alpha, Safety y capacidad de salida están alineados.',
+  developing:'La señal está desarrollándose, pero aún no cumple el umbral de entrada.',
+  independent_sellers:'Varios actores independientes están reduciendo o saliendo.'
+}[value]||String(value||'').replaceAll('_',' '));
 
 function providerText(data){
   const provider=data.sync?.provider||data.sync?.lastScan?.discovery;
   const wallets=data.sync?.lastScan?.trackedWallets||data.summary.money;
   const backfill=data.sync?.alchemyBackfill;
   const history=backfill?.status==='complete'
-    ?` · histórico ${backfill.transactions||0} tx`
+    ?` · histórico completo (${backfill.transactions||0} tx)`
     :backfill?.status?` · histórico ${backfill.status}`:'';
   if(data.sync?.lastError)return'Feed con error · '+data.sync.lastError;
-  if(provider==='alchemy-webhook')return`ALCHEMY LIVE · ${wallets} wallets · último webhook ${ago(data.sync.lastWebhookAt)}${history}`;
+  if(provider==='alchemy-webhook')return`Alchemy live · ${wallets} wallets · último webhook ${ago(data.sync.lastWebhookAt)}${history}`;
   if(provider==='blockscout-pro'){
     const newEvents=data.sync?.lastScan?.newEvents||0;
-    return`BLOCKSCOUT LIVE · ${wallets} wallets · ${newEvents} eventos nuevos · sync ${ago(data.sync.lastChainSync)}`;
+    return`Blockscout live · ${wallets} wallets · ${newEvents} eventos nuevos · sync ${ago(data.sync.lastChainSync)}`;
   }
   if(provider==='awaiting-blockscout-key'||provider==='awaiting-provider-credentials')return'Motor online · feed on-chain pendiente de provider';
   return'Motor online · preparando feed';
 }
 
+function signalCard(signal){
+  const hasEntryEvidence=(signal.events||[]).some(event=>['CALL','BUY','ADD','REENTRY'].includes(event.action));
+  const alpha=hasEntryEvidence?`${Number(signal.alpha||0)}/100`:'—';
+  const alphaNote=hasEntryEvidence?'confluencia':'sin entrada válida';
+  const impact=signal.sellImpactPct!=null?`${Number(signal.sellImpactPct).toFixed(1)}%`:'—';
+  return`<article class="signal-card state-${esc(String(signal.state||'').toLowerCase())}">
+    <div class="signal-top">
+      <div><b class="token">${esc(signal.symbol||'TOKEN')}</b><span>${esc(ago(signal.lastSeen))}</span></div>
+      <span class="state-tag">${esc(stateLabel(signal.state))}</span>
+    </div>
+    <p class="verdict">${esc(reasonText(signal.reason))}</p>
+    <div class="signal-grid">
+      <div><span>Alpha</span><b>${esc(alpha)}</b><small>${esc(alphaNote)}</small></div>
+      <div><span>Confluencia</span><b>${Number(signal.independentActors||0)}</b><small>actores independientes</small></div>
+      <div><span>Safety</span><b>${esc(gateLabel(signal.safety?.status))}</b><small>${esc(signal.safety?.reason||'contrato')}</small></div>
+      <div><span>Salida</span><b>${esc(gateLabel(signal.exitabilityGate?.status))}</b><small>${signal.exitabilityTargetUsd?`$${esc(signal.exitabilityTargetUsd)} · impacto ${esc(impact)}`:'quote pendiente'}</small></div>
+    </div>
+    <div class="market-row"><span>MC <b>${money(signal.currentMarketCap)}</b></span><span>Liquidez <b>${money(signal.liquidityUsd)}</b></span></div>
+    <details class="technical"><summary>Ver datos técnicos</summary>
+      <p>Contrato <code>${esc(signal.tokenAddress)}</code></p>
+      <p>Score ${esc(signal.score)} · Alpha bruto ${esc(signal.alpha)} · Timing ${esc(signal.timing)} · Exitability ${esc(signal.exitability)}</p>
+      <p>Motivo interno: ${esc(signal.reason)}</p>
+    </details>
+  </article>`;
+}
+
+function observationCard(signal){
+  const actions=[...new Set((signal.events||[]).map(event=>event.action).filter(Boolean))];
+  return`<article class="observation">
+    <div><b>${esc(signal.symbol||'TOKEN')}</b><span>${esc(actions.join(' · ')||'movimiento observado')} · ${esc(ago(signal.lastSeen))}</span></div>
+    <strong>NO SIGNAL</strong>
+    <details class="technical"><summary>Detalles</summary><p><code>${esc(signal.tokenAddress)}</code></p><p>${esc(reasonText(signal.reason))}</p></details>
+  </article>`;
+}
+
 function renderSignals(signals){
-  $('#signals').innerHTML=signals.length?signals.map(signal=>`
-    <article class="card ${esc(signal.state.toLowerCase())}">
-      <div class="row"><b>${esc(signal.symbol||'TOKEN')}</b><span class="tag">${esc(label(signal.state))}</span></div>
-      <div class="scores">
-        <div><b>${signal.alpha}</b><span>Alpha</span></div>
-        <div><b>${esc(signal.safety.status)}</b><span>Safety</span></div>
-        <div><b>${esc(signal.exitabilityGate?.status||'UNKNOWN')}</b><span>Exit ${signal.exitability}</span></div>
-      </div>
-      <p>${signal.independentActors} actores independientes · MC ${money(signal.currentMarketCap)} · Liq ${money(signal.liquidityUsd)}${signal.sellImpactPct!=null?` · impacto $${signal.exitabilityTargetUsd}: ${Number(signal.sellImpactPct).toFixed(1)}%`:''}</p>
-      <small>${esc(signal.tokenAddress)} · ${esc(signal.reason)}</small>
-    </article>`).join(''):
-    '<div class="empty">No hay señales verificadas todavía. El radar no inventa trades ni convierte UNKNOWN en PASS.</div>';
+  const actionable=signals.filter(signal=>signal.state!=='IGNORE');
+  const ignored=signals.filter(signal=>signal.state==='IGNORE');
+  $('#signalCount').textContent=actionable.length;
+  $('#signals').innerHTML=actionable.length?actionable.map(signalCard).join(''):
+    '<div class="empty good-empty"><b>Sin señales accionables ahora</b><span>El radar está observando, pero no fuerza entradas cuando falta evidencia.</span></div>';
+  $('#observationsPanel').hidden=!ignored.length;
+  $('#ignoredCount').textContent=ignored.length;
+  $('#observations').innerHTML=ignored.map(observationCard).join('');
 }
 
 function renderCalibration(calibration){
   if(!calibration){$('#calibration').innerHTML='<div class="empty">Calibración todavía no disponible.</div>';return;}
   const dataset=calibration.dataset||{};
-  const overview=`
-    <article class="calibration ${calibration.status==='CALIBRATION_ACTIVE'?'ready':''}">
-      <div class="row"><b>Estado del modelo</b><strong>${esc(label(calibration.status))}</strong></div>
-      <p>${dataset.verifiedEntries||0} entradas económicas verificadas · ${dataset.verifiedExits||0} salidas · ${dataset.completedH1||0} retornos H1 completos</p>
-    </article>`;
-  const wallets=(calibration.actors||[]).map(actor=>{
+  const active=calibration.status==='CALIBRATION_ACTIVE';
+  const message=dataset.verifiedEntries
+    ?`${dataset.verifiedEntries} compras verificadas · ${dataset.completedH1||0} retornos H1 completos.`
+    :`${dataset.events||0} eventos observados, pero todavía 0 compras económicas verificadas. ACQUIRE y TRANSFER_OUT no se usan como performance.`;
+  const actorRows=(calibration.actors||[]).map(actor=>{
     const h1=actor.medianReturns?.h1;
-    return`<article class="calibration ${['TESTED_READY','CORE_READY'].includes(actor.status)?'ready':''}">
-      <div class="row"><b>${esc(actor.handle)}</b><strong>${esc(label(actor.status))}</strong></div>
-      <p>${actor.observedEvents} eventos observados · ${actor.verifiedEntries} entradas · ${actor.completedH1} resultados H1${h1!=null?` · mediana ${Number(h1).toFixed(1)}%`:''}</p>
-    </article>`;
+    return`<div class="cal-row">
+      <div><b>${esc(actor.handle)}</b><span>${actor.observedEvents} eventos · ${actor.verifiedEntries} compras · ${actor.completedH1} H1 completos${h1!=null?` · mediana H1 ${Number(h1).toFixed(1)}%`:''}</span></div>
+      <strong>${esc(calibrationLabel(actor.status))}</strong>
+    </div>`;
   }).join('');
-  $('#calibration').innerHTML=overview+wallets;
+  $('#calibration').innerHTML=`
+    <article class="learning ${active?'ready':''}">
+      <span class="eyebrow">${active?'MEDICIÓN ACTIVA':'MUESTRA EN CONSTRUCCIÓN'}</span>
+      <h3>${esc(calibrationLabel(calibration.status))}</h3>
+      <p>${esc(message)}</p>
+    </article>
+    <details class="fold inner"><summary><span>Ver calibración por wallet</span><strong>${(calibration.actors||[]).length}</strong></summary><div class="cal-list">${actorRows}</div></details>`;
+}
+
+function actorCard(actor,measured){
+  const handle=actor.xHandle||actor.handle;
+  const observed=measured?.observedEvents||0;
+  const verified=measured?.verifiedEntries||0;
+  return`<article class="actor">
+    <div class="actor-main">
+      <b>${esc(handle)}</b>
+      <span>Money wallet · ${esc(roleLabel(actor.role))} · ${esc(actor.division)}</span>
+      <small>${observed} eventos observados · ${verified} compras verificadas</small>
+    </div>
+    <div class="actor-score"><b>${esc(actor.adaptiveScore)}</b><span>score provisional</span></div>
+  </article>`;
+}
+
+function socialActorCard(actor){
+  return`<article class="actor muted-actor">
+    <div class="actor-main"><b>${esc(actor.xHandle||actor.handle)}</b><span>Social · ${esc(roleLabel(actor.role))} · pendiente de feed live</span></div>
+    <div class="actor-score"><b>${esc(actor.adaptiveScore)}</b><span>prior</span></div>
+  </article>`;
 }
 
 function renderActors(data){
   const calibrationByActor=new Map((data.calibration?.actors||[]).map(actor=>[actor.actorId,actor]));
-  $('#actors').innerHTML=data.actors.slice(0,20).map(actor=>{
-    const measured=calibrationByActor.get(actor.id);
-    const sample=measured?` · ${measured.verifiedEntries} entradas verificadas`:'';
-    return`<article class="actor"><div><b>${esc(actor.xHandle||actor.handle)}</b><span>${esc(actor.kind)} · ${esc(actor.role)} · ${esc(actor.division)}${sample}</span></div><strong>${actor.adaptiveScore}</strong></article>`;
-  }).join('');
+  const moneyActors=data.actors.filter(actor=>actor.kind==='money');
+  const socialActors=data.actors.filter(actor=>actor.kind==='social');
+  $('#actors').innerHTML=moneyActors.map(actor=>actorCard(actor,calibrationByActor.get(actor.id))).join('');
+  $('#socialPanel').hidden=!socialActors.length;
+  $('#socialCount').textContent=socialActors.length;
+  $('#socialActors').innerHTML=socialActors.map(socialActorCard).join('');
 }
 
 async function load(){
@@ -85,21 +162,28 @@ async function load(){
     if(!response.ok)throw new Error(`HTTP ${response.status}`);
     const data=await response.json();
     const live=!!data.sync?.lastScan?.providerReady&&!data.sync?.lastError;
-    $('#status').textContent=live?'LIVE':'ENGINE';
+    const dataset=data.calibration?.dataset||{};
+    $('#status').textContent=live?'LIVE':'MOTOR';
+    document.body.classList.toggle('is-live',live);
     $('#money').textContent=data.summary.money;
-    $('#resolved').textContent=data.summary.resolved;
+    $('#verified').textContent=dataset.verifiedEntries||0;
     $('#entries').textContent=data.summary.entryCandidates;
     $('#dist').textContent=data.summary.distribution;
     $('#fresh').textContent=providerText(data);
+    $('#systemMeta').textContent=`${data.summary.resolved}/${data.summary.actors} identidades con wallet resuelta · ${dataset.events||0} eventos observados`;
     $('#headline').textContent=data.summary.entryCandidates
-      ?`Hay ${data.summary.entryCandidates} candidata(s) para revisar.`
-      :live?'Sin Entry Candidates confirmadas ahora.':'Radar listo; no emitirá señales hasta tener datos verificables.';
+      ?`${data.summary.entryCandidates} oportunidad${data.summary.entryCandidates===1?'':'es'} de entrada para revisar`
+      :data.summary.distribution
+        ?`${data.summary.distribution} alerta${data.summary.distribution===1?'':'s'} de distribución activa${data.summary.distribution===1?'':'s'}`
+        :live?'Sin oportunidades de entrada confirmadas ahora':'Radar operativo; esperando datos verificables';
+    $('#generated').textContent=`Actualizado ${ago(data.generatedAt)}`;
     renderSignals(data.signals||[]);
     renderCalibration(data.calibration);
     renderActors(data);
   }catch(error){
     $('#status').textContent='ERROR';
-    $('#fresh').textContent='Error: '+error.message;
+    $('#fresh').textContent='Error al cargar el radar: '+error.message;
+    $('#headline').textContent='No se pudo leer el estado actual';
   }
 }
 

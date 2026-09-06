@@ -11,28 +11,73 @@
 </head>
 <body>
   <div class="shell">
-    <header>
-      <div><small>ROBINHOOD CHAIN · ADAPTIVE RADAR</small><h1>Trenches Radar</h1></div>
-      <span id="status">LIVE</span>
+    <header class="topbar">
+      <div class="brand">
+        <small>ROBINHOOD CHAIN</small>
+        <h1>Trenches Radar</h1>
+      </div>
+      <div class="live-pill"><i></i><span id="status">CARGANDO</span></div>
     </header>
+
     <main>
       <section class="hero">
-        <p id="fresh">Preparando radar…</p>
-        <h2>Morning Brief</h2>
-        <p id="headline">Buscando alpha sin forzar entradas.</p>
+        <span class="eyebrow">RADAR AHORA</span>
+        <h2 id="headline">Comprobando señales…</h2>
+        <p id="fresh">Conectando con el feed on-chain.</p>
         <div class="metrics">
-          <div><b id="money">—</b><span>money</span></div>
-          <div><b id="resolved">—</b><span>resolved</span></div>
-          <div><b id="entries">—</b><span>entry</span></div>
-          <div><b id="dist">—</b><span>distribution</span></div>
+          <div><span>Wallets on-chain</span><b id="money">—</b></div>
+          <div><span>Compras verificadas</span><b id="verified">—</b></div>
+          <div><span>Entradas ahora</span><b id="entries">—</b></div>
+          <div><span>Distribución</span><b id="dist">—</b></div>
         </div>
+        <p id="systemMeta" class="system-meta">—</p>
+        <span id="resolved" hidden>—</span>
       </section>
-      <h3>Señales</h3>
-      <div id="signals" class="stack"></div>
-      <h3>Calibración real</h3>
-      <div id="calibration" class="stack"></div>
-      <h3>Adaptive Radar</h3>
-      <div id="actors" class="stack"></div>
+
+      <section class="section">
+        <div class="section-head">
+          <div><span class="eyebrow">PRIORIDAD</span><h2>Qué merece atención</h2></div>
+          <span id="signalCount" class="count-pill">0</span>
+        </div>
+        <div id="signals" class="stack"></div>
+        <details id="observationsPanel" class="fold" hidden>
+          <summary><span>Observaciones sin señal</span><strong id="ignoredCount">0</strong></summary>
+          <p>Movimientos on-chain detectados que no son una compra/entrada económica verificada. No suman Alpha.</p>
+          <div id="observations" class="stack compact"></div>
+        </details>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <div><span class="eyebrow">FUENTES</span><h2>Quién estamos siguiendo</h2></div>
+        </div>
+        <p class="section-copy">El score mostrado aquí es un <b>score provisional de fuente</b>, no rentabilidad ni PnL. Se irá sustituyendo por rendimiento medido cuando haya compras verificadas.</p>
+        <div id="actors" class="stack"></div>
+        <details id="socialPanel" class="fold" hidden>
+          <summary><span>Fuentes sociales pendientes</span><strong id="socialCount">0</strong></summary>
+          <p>Aún no alimentan señales live hasta conectar Social Radar. Se conservan como Candidate Pool.</p>
+          <div id="socialActors" class="stack compact"></div>
+        </details>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <div><span class="eyebrow">APRENDIZAJE</span><h2>Calibración real</h2></div>
+        </div>
+        <div id="calibration" class="stack"></div>
+      </section>
+
+      <details class="fold help">
+        <summary><span>Qué significa cada indicador</span><strong>?</strong></summary>
+        <div class="legend">
+          <p><b>Alpha</b> · Fuerza de la confluencia de entradas verificadas. Si no existe una compra/call válida, se muestra “—”, no 0.</p>
+          <p><b>Safety</b> · Riesgos críticos del contrato y del pool. UNKNOWN nunca equivale a PASS.</p>
+          <p><b>Salida</b> · Capacidad de vender el tamaño objetivo sin impacto excesivo.</p>
+          <p><b>Score de fuente</b> · Prior provisional basado en identidad, rol, copyability, actividad y muestra. No es performance.</p>
+        </div>
+      </details>
+
+      <p id="generated" class="generated"></p>
     </main>
   </div>
   <script src="/app.js"></script>
