@@ -7,6 +7,7 @@ const Engine=require('./lib/engine');
 const Storage=require('./lib/storage');
 const ChainScanner=require('./lib/chainScanner');
 const LiveSubscriber=require('./lib/liveSubscriber');
+const AlchemyWebhook=require('./lib/alchemyWebhook');
 
 const PORT=Number(process.env.PORT||8787);
 const DATABASE_URL=process.env.DATABASE_URL||'';
@@ -15,6 +16,8 @@ const WRITE_API_TOKEN=process.env.WRITE_API_TOKEN||'';
 const RH_RPC_URL=process.env.RH_RPC_URL||'https://rpc.mainnet.chain.robinhood.com';
 const RH_WSS_URL=process.env.RH_WSS_URL||'';
 const BLOCKSCOUT_API_KEY=process.env.BLOCKSCOUT_API_KEY||'';
+const ALCHEMY_WEBHOOK_ID=process.env.ALCHEMY_WEBHOOK_ID||'';
+const ALCHEMY_WEBHOOK_SIGNING_KEY=process.env.ALCHEMY_WEBHOOK_SIGNING_KEY||'';
 const BACKFILL_BLOCKS=Number(process.env.BACKFILL_BLOCKS||1200);
 const MAX_BLOCK_RANGE=Number(process.env.MAX_BLOCK_RANGE||500);
 const ROOT=__dirname, PUBLIC=path.join(ROOT,'public'), DB_FILE=path.join(ROOT,'data','db.json');
@@ -24,6 +27,9 @@ let db;
 let syncRunning=false;
 let liveSubscriber=null;
 let liveQueue=Promise.resolve();
+
+function alchemyWebhookConfigured(){return !!ALCHEMY_WEBHOOK_ID&&!!ALCHEMY_WEBHOOK_SIGNING_KEY;}
+function currentProvider(){return alchemyWebhookConfigured()?'alchemy-webhook':scanner.hasPro()?'blockscout-pro':'awaiting-provider-credentials';}
 
 const seedActors=[
 {id:'unipcs',handle:'unipcs',xHandle:'@theunipcs',kind:'money',role:'confirmation',identityConfidence:'verified',evmAddress:'0x0a6ebed0155edb4b21d92ad02897a626cd90119e',copyability:68,roleScores:{discovery:62,confirmation:91,execution:82}},
@@ -40,11 +46,12 @@ const seedActors=[
 {id:'damskotrades',handle:'damskotrades',xHandle:'@damskotrades',kind:'social',role:'confirmation',identityConfidence:'unresolved',copyability:83,roleScores:{discovery:61,confirmation:84,narrative:78}}
 ].map(a=>({...a,enabled:true,sampleSize:a.calls||0,lastEventAt:null}));
 
-function initial(){const now=new Date().toISOString();return{version:5,createdAt:now,updatedAt:now,actors:seedActors,events:[],tokenState:{},alerts:[],sync:{lastChainSync:null,lastScannedBlock:null,lastError:null,lastScan:null,ws:null,lastLiveTx:null,provider:scanner.hasPro()?'blockscout-pro':'awaiting-blockscout-key'}}}
+function initial(){const now=new Date().toISOString();return{version:5,createdAt:now,updatedAt:now,actors:seedActors,events:[],tokenState:{},alerts:[],sync:{lastChainSync:null,lastScannedBlock:null,lastError:null,lastScan:null,ws:null,lastLiveTx:null,provider:currentProvider()}}}
 const save=()=>storage.save(db);
 const json=(res,status,body)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});res.end(JSON.stringify(body))};
 const auth=(req,token)=>!!token&&req.headers.authorization===`Bearer ${token}`;
-function body(req){return new Promise((resolve,reject)=>{let s='';req.on('data',c=>{s+=c;if(s.length>1e6)reject(new Error('body too large'))});req.on('end',()=>{try{resolve(s?JSON.parse(s):{})}catch(e){reject(e)}});req.on('error',reject)})}
+function rawBody(req){return new Promise((resolve,reject)=>{let s='';req.on('data',c=>{s+=c;if(s.length>1e6)reject(new Error('body too large'))});req.on('end',()=>resolve(s));req.on('error',reject)})}
+function body(req){return rawBody(req).then(s=>{try{return s?JSON.parse(s):{}}catch(e){throw e}})}
 function staticFile(res,p){let rel=p==='/'?'index.html':p.replace(/^\//,'');rel=path.normalize(rel).replace(/^\.\.(\/|\\|$)/,'');const f=path.join(PUBLIC,rel);if(!f.startsWith(PUBLIC)||!fs.existsSync(f)||fs.statSync(f).isDirectory())return false;const ext=path.extname(f);const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.webmanifest':'application/manifest+json'};res.writeHead(200,{'content-type':types[ext]||'application/octet-stream','cache-control':ext==='.html'?'no-cache':'public,max-age=300'});fs.createReadStream(f).pipe(res);return true}
 function actorMap(){const out={};for(const a of db.actors){a.adaptiveScore=Engine.adaptiveActorScore(a);a.division=Engine.division(a.sampleSize||a.calls||0,a.kind);out[a.id]=a}return out}
 function moneyWalletMap(){return new Map(db.actors.filter(a=>a.kind==='money'&&a.enabled!==false&&/^0x[a-fA-F0-9]{40}$/.test(a.evmAddress||'')).map(a=>[a.evmAddress.toLowerCase(),a]));}
@@ -75,6 +82,20 @@ async function storeEvents(rows,tokenStates={}){
   return fresh;
 }
 
+async function enrichTokens(tokens){
+  const tokenStates={};
+  for(const token of [...new Set(tokens||[])]){
+    const m=await scanner.market(token,true);
+    if(m)tokenStates[token]={marketCap:m.marketCap,priceUsd:m.priceUsd,fdv:m.fdv,execution:{liquidityUsd:m.liquidityUsd,pairAddress:m.pairAddress,dexId:m.dexId,marketSource:m.marketSource}};
+  }
+  for(const [address,state] of Object.entries(tokenStates))mergeTokenState(address,state);
+  save();await storage.flush();
+}
+function queueTokenEnrichment(tokens){
+  if(!tokens?.length)return;
+  liveQueue=liveQueue.then(()=>enrichTokens(tokens)).catch(e=>{db.sync={...(db.sync||{}),lastError:e.message};save();console.error(`[market] ${e.message}`);});
+}
+
 async function ingestLiveTx(txHash){
   const rows=await scanner.analyzeTx(txHash,moneyWalletMap());
   const tokenStates={};
@@ -90,10 +111,35 @@ async function ingestLiveTx(txHash){
 }
 function queueLiveTx(txHash){liveQueue=liveQueue.then(()=>ingestLiveTx(txHash)).catch(e=>{db.sync={...(db.sync||{}),lastError:e.message,lastLiveTx:txHash};save();console.error(`[live] ${txHash} ${e.message}`);});return liveQueue;}
 
+async function ingestAlchemyWebhook(payload){
+  const wallets=moneyWalletMap();
+  const rows=AlchemyWebhook.parseAddressActivity(payload,wallets,{isQuoteToken:a=>scanner.isQuoteToken(a)});
+  const fresh=await storeEvents(rows);
+  const txHashes=[...new Set(rows.map(e=>e.txHash).filter(Boolean))];
+  const now=new Date().toISOString();
+  db.sync={
+    ...(db.sync||{}),lastChainSync:now,lastLiveTx:txHashes[0]||db.sync?.lastLiveTx||null,
+    lastError:null,lastLiveEvents:fresh.length,provider:'alchemy-webhook',lastWebhookAt:now,
+    lastWebhookEventId:payload?.id||null,lastWebhookActivity:Array.isArray(payload?.event?.activity)?payload.event.activity.length:0,
+    lastScan:{...(db.sync?.lastScan||{}),trackedWallets:wallets.size,discovery:'alchemy-webhook',providerReady:true,newEvents:fresh.length}
+  };
+  save();await storage.flush();
+  queueTokenEnrichment(rows.map(e=>e.tokenAddress));
+  console.log(`[alchemy] ${payload?.id||'event'} -> ${fresh.length}/${rows.length} new radar event(s)`);
+  return{rows,fresh};
+}
+
 async function runLiveSync(){
   if(syncRunning)return{ok:true,skipped:true,reason:'sync_already_running'};
   syncRunning=true;
   try{
+    if(alchemyWebhookConfigured()&&!scanner.hasPro()){
+      const now=new Date().toISOString();
+      const lastScan={fromBlock:db.sync?.lastScannedBlock??null,toBlock:db.sync?.lastScannedBlock??null,transactions:0,transferRecords:0,pages:0,newEvents:0,trackedWallets:moneyWalletMap().size,discovery:'alchemy-webhook',providerReady:true,creditsRemaining:null,rateRemaining:null};
+      db.sync={...(db.sync||{}),lastChainSync:now,lastError:null,chainId:4663,provider:'alchemy-webhook',lastScan};
+      save();await storage.flush();
+      return{ok:true,...lastScan,lastChainSync:now};
+    }
     const existingKeys=new Set(db.events.map(e=>e.key).filter(Boolean));
     const result=await scanner.scan({actors:db.actors,sync:db.sync||{},existingKeys});
     const fresh=await storeEvents(result.events||[],result.tokenStates||{});
@@ -101,22 +147,32 @@ async function runLiveSync(){
     save();await storage.flush();
     return{ok:true,...db.sync.lastScan,lastChainSync:db.sync.lastChainSync};
   }catch(e){
-    db.sync={...(db.sync||{}),lastChainSync:new Date().toISOString(),lastError:e.message,lastScan:{failed:true},provider:scanner.hasPro()?'blockscout-pro-error':'awaiting-blockscout-key'};
+    db.sync={...(db.sync||{}),lastChainSync:new Date().toISOString(),lastError:e.message,lastScan:{failed:true},provider:alchemyWebhookConfigured()?'alchemy-webhook':scanner.hasPro()?'blockscout-pro-error':'awaiting-provider-credentials'};
     save();await storage.flush();throw e;
   }finally{syncRunning=false;}
 }
 
 function startLiveSubscriber(){
   if(!/^wss:\/\//i.test(RH_WSS_URL)){
-    db.sync={...(db.sync||{}),ws:{state:'disabled',at:new Date().toISOString(),reason:'no_production_wss_configured'}};save();console.log('[wss] disabled; using indexed polling');return;
+    db.sync={...(db.sync||{}),ws:{state:'disabled',at:new Date().toISOString(),reason:alchemyWebhookConfigured()?'alchemy_webhook_primary':'no_production_wss_configured'}};save();console.log(`[wss] disabled; using ${alchemyWebhookConfigured()?'Alchemy webhook':'indexed polling'}`);return;
   }
   liveSubscriber=new LiveSubscriber({wsUrl:RH_WSS_URL,getWallets:()=>[...moneyWalletMap().keys()],onTx:queueLiveTx,onStatus:s=>{db.sync={...(db.sync||{}),ws:s};save();console.log(`[wss] ${s.state}${s.error?' '+s.error:''}`);}});
   liveSubscriber.start();
 }
 
 const server=http.createServer(async(req,res)=>{const u=new URL(req.url,`http://${req.headers.host||'localhost'}`),p=u.pathname;try{
-if(p==='/api/health')return json(res,200,{ok:true,version:5,storage:DATABASE_URL?'postgres':'file',chainId:4663,provider:scanner.hasPro()?'blockscout-pro':'awaiting-blockscout-key',ws:db?.sync?.ws?.state||'disabled',time:new Date().toISOString()});
+if(p==='/api/health')return json(res,200,{ok:true,version:5,storage:DATABASE_URL?'postgres':'file',chainId:4663,provider:currentProvider(),webhook:alchemyWebhookConfigured()?'configured':'disabled',ws:db?.sync?.ws?.state||'disabled',time:new Date().toISOString()});
 if(p==='/api/dashboard'&&req.method==='GET')return json(res,200,dashboard());
+if(p==='/api/webhooks/alchemy'&&req.method==='POST'){
+  if(!alchemyWebhookConfigured())return json(res,503,{error:'alchemy webhook not configured'});
+  const raw=await rawBody(req),signature=String(req.headers['x-alchemy-signature']||'');
+  if(!AlchemyWebhook.isValidSignature(raw,signature,ALCHEMY_WEBHOOK_SIGNING_KEY))return json(res,403,{error:'invalid alchemy signature'});
+  let b;try{b=raw?JSON.parse(raw):{}}catch{return json(res,400,{error:'invalid json'})}
+  if(b.webhookId!==ALCHEMY_WEBHOOK_ID)return json(res,403,{error:'unexpected webhook id'});
+  if(b.type!=='ADDRESS_ACTIVITY')return json(res,200,{ok:true,ignored:true,type:b.type||null});
+  const result=await ingestAlchemyWebhook(b);
+  return json(res,200,{ok:true,received:result.rows.length,newEvents:result.fresh.length});
+}
 if(p==='/api/internal/sync'&&req.method==='POST'){if(!auth(req,INTERNAL_SYNC_TOKEN))return json(res,401,{error:'unauthorized'});return json(res,200,await runLiveSync());}
 if(p==='/api/events'&&req.method==='POST'){if(!auth(req,WRITE_API_TOKEN))return json(res,401,{error:'unauthorized'});const b=await body(req);if(!b.actorId||!b.action||!/^0x[a-fA-F0-9]{40}$/.test(b.tokenAddress||''))return json(res,400,{error:'actorId, action and exact tokenAddress required'});if(!db.actors.some(a=>a.id===b.actorId))return json(res,404,{error:'actor not found'});const e={key:b.key||`${Date.now()}:${b.actorId}:${b.tokenAddress}`,actorId:b.actorId,action:String(b.action).toUpperCase(),tokenAddress:b.tokenAddress.toLowerCase(),symbol:b.symbol||null,marketCap:b.marketCap??null,blockNumber:b.blockNumber??null,blockHash:b.blockHash??null,at:b.at||new Date().toISOString(),signalRole:b.signalRole||null,source:b.source||'external'};db.events.unshift(e);save();return json(res,201,{ok:true})}
 if(p==='/api/token-state'&&req.method==='POST'){if(!auth(req,WRITE_API_TOKEN))return json(res,401,{error:'unauthorized'});const b=await body(req);if(!/^0x[a-fA-F0-9]{40}$/.test(b.tokenAddress||''))return json(res,400,{error:'exact tokenAddress required'});mergeTokenState(b.tokenAddress.toLowerCase(),b.state||{});save();return json(res,200,{ok:true})}
