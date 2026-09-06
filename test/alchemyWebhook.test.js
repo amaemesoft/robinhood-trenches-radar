@@ -9,6 +9,7 @@ const WALLET='0x1111111111111111111111111111111111111111';
 const ROUTER='0x2222222222222222222222222222222222222222';
 const MEME='0x3333333333333333333333333333333333333333';
 const USDG='0x5fc5360d0400a0fd4f2af552add042d716f1d168';
+const OTHER='0x4444444444444444444444444444444444444444';
 const NFT='0x7777777777777777777777777777777777777777';
 const walletMap=()=>new Map([[WALLET,{id:'pilot'}]]);
 const isQuoteToken=a=>a.toLowerCase()===USDG;
@@ -67,4 +68,14 @@ test('NFT activity is ignored',()=>{
   a.category='erc721';a.erc721TokenId='0x1';
   const rows=parseAddressActivity(payload([a]),walletMap(),{isQuoteToken});
   assert.equal(rows.length,0);
+});
+
+test('a non-quote token outflow cannot manufacture a BUY',()=>{
+  const rows=parseAddressActivity(payload([
+    token({from:WALLET,to:ROUTER,address:OTHER,asset:'OTHER'}),
+    token({from:ROUTER,to:WALLET})
+  ]),walletMap(),{isQuoteToken});
+  const meme=rows.find(row=>row.tokenAddress===MEME);
+  assert.equal(meme.action,'ACQUIRE');
+  assert.deepEqual(meme.classificationEvidence.quoteOutTokens,[]);
 });

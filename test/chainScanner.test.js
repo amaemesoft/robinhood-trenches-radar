@@ -102,3 +102,14 @@ test('symbol spoof cannot masquerade as canonical quote asset',async()=>{
   assert.equal(rows[0].action,'ACQUIRE');
   assert.equal(rows[0].classificationEvidence.quoteAssetRule,'exact-contract');
 });
+
+test('a simultaneous non-quote token inflow does not turn an outflow into SELL',async()=>{
+  const {scanner}=scannerFor({transfers:[
+    transfer({from:WALLET,to:ROUTER,token:MEME}),
+    transfer({from:ROUTER,to:WALLET,token:OTHER,symbol:'OTHER'})
+  ]});
+  const rows=await scanner.analyzeTx('0x8',walletMap());
+  const meme=rows.find(row=>row.tokenAddress===MEME);
+  assert.equal(meme.action,'TRANSFER_OUT');
+  assert.deepEqual(meme.classificationEvidence.quoteInTokens,[]);
+});
