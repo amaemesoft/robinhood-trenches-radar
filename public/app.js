@@ -107,12 +107,12 @@ function renderCalibration(calibration){
   const dataset=calibration.dataset||{};
   const active=calibration.status==='CALIBRATION_ACTIVE';
   const message=dataset.verifiedEntries
-    ?`${dataset.verifiedEntries} compras verificadas · ${dataset.completedH1||0} retornos H1 completos.`
-    :`${dataset.events||0} eventos observados, pero todavía 0 compras económicas verificadas. ACQUIRE y TRANSFER_OUT no se usan como performance.`;
+    ?`${dataset.verifiedEntries} compras verificadas · ${dataset.verifiedExits||0} salidas verificadas · ${dataset.completedH1||0} retornos H1 completos.`
+    :`${dataset.events||0} eventos observados · ${dataset.verifiedExits||0} salidas verificadas · todavía 0 compras económicas verificadas. ACQUIRE y TRANSFER_OUT no se usan como performance.`;
   const actorRows=(calibration.actors||[]).map(actor=>{
     const h1=actor.medianReturns?.h1;
     return`<div class="cal-row">
-      <div><b>${esc(actor.handle)}</b><span>${actor.observedEvents} eventos · ${actor.verifiedEntries} compras · ${actor.completedH1} H1 completos${h1!=null?` · mediana H1 ${Number(h1).toFixed(1)}%`:''}</span></div>
+      <div><b>${esc(actor.handle)}</b><span>${actor.observedEvents} eventos · ${actor.verifiedEntries} compras · ${actor.verifiedExits} salidas · ${actor.completedH1} H1 completos${h1!=null?` · mediana H1 ${Number(h1).toFixed(1)}%`:''}</span></div>
       <strong>${esc(calibrationLabel(actor.status))}</strong>
     </div>`;
   }).join('');
@@ -141,7 +141,7 @@ function actorCard(actor,measured){
 
 function socialActorCard(actor){
   return`<article class="actor muted-actor">
-    <div class="actor-main"><b>${esc(actor.xHandle||actor.handle)}</b><span>Social · ${esc(roleLabel(actor.role))} · pendiente de feed live</span></div>
+    <div class="actor-main"><b>${esc(actor.xHandle||actor.handle)}</b><span>Social · ${esc(roleLabel(actor.role))} · ${esc(actor.division)} · pendiente de feed live</span></div>
     <div class="actor-score"><b>${esc(actor.adaptiveScore)}</b><span>prior</span></div>
   </article>`;
 }
