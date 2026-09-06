@@ -50,10 +50,40 @@ const seedActors=[
 {id:'Gleobets',handle:'Gleobets',xHandle:'@Gleobets',kind:'social',role:'discovery',identityConfidence:'unresolved',calls:5,recentEdge:72,lifetimeEdge:70,copyability:72,roleScores:{discovery:85}},
 {id:'Cryptofather',handle:'Cryptofather',xHandle:'@Cryptofather',kind:'social',role:'discovery',identityConfidence:'unresolved',calls:5,recentEdge:69,lifetimeEdge:68,copyability:72,roleScores:{discovery:82}},
 {id:'itsjustjaydot',handle:'itsjustjaydot',xHandle:'@itsjustjaydot',kind:'social',role:'discovery',identityConfidence:'unresolved',calls:10,recentEdge:70,lifetimeEdge:69,copyability:75,roleScores:{discovery:84}},
-{id:'damskotrades',handle:'damskotrades',xHandle:'@damskotrades',kind:'social',role:'confirmation',identityConfidence:'unresolved',copyability:83,roleScores:{discovery:61,confirmation:84,narrative:78}}
+{id:'damskotrades',handle:'damskotrades',xHandle:'@damskotrades',kind:'social',role:'confirmation',identityConfidence:'unresolved',copyability:83,roleScores:{discovery:61,confirmation:84,narrative:78}},
+{id:'iruletrenches',handle:'iruletrenches',xHandle:'@iruletrenches',kind:'social',role:'discovery',identityConfidence:'unresolved'},
+{id:'Bluntz_Capital',handle:'Bluntz_Capital',xHandle:'@Bluntz_Capital',kind:'social',role:'discovery',identityConfidence:'unresolved'},
+{id:'EricCryptoman',handle:'EricCryptoman',xHandle:'@EricCryptoman',kind:'social',role:'discovery',identityConfidence:'unresolved'},
+{id:'cottonxbt',handle:'cottonxbt',xHandle:'@cottonxbt',kind:'social',role:'discovery',identityConfidence:'unresolved'},
+{id:'traderpow',handle:'traderpow',xHandle:'@traderpow',kind:'social',role:'discovery',identityConfidence:'unresolved'},
+{id:'KieranWarwick',handle:'KieranWarwick',xHandle:'@KieranWarwick',kind:'social',role:'discovery',identityConfidence:'unresolved'},
+{id:'MINHxDYNASTY',handle:'MINHxDYNASTY',xHandle:'@MINHxDYNASTY',kind:'social',role:'discovery',identityConfidence:'unresolved'},
+{id:'PhilOnChain',handle:'PhilOnChain',xHandle:'@PhilOnChain',kind:'social',role:'discovery',identityConfidence:'unresolved'},
+{id:'RevengeTrador',handle:'RevengeTrador',xHandle:'@RevengeTrador',kind:'social',role:'discovery',identityConfidence:'unresolved'},
+{id:'kyle',handle:'kyle',xHandle:'@kyle',kind:'social',role:'discovery',identityConfidence:'unresolved'},
+{id:'econoar',handle:'econoar',xHandle:'@econoar',kind:'social',role:'discovery',identityConfidence:'unresolved'},
+{id:'eddie_bellotti',handle:'eddie_bellotti',xHandle:'@eddie_bellotti',kind:'social',role:'discovery',identityConfidence:'unresolved'},
+{id:'rittykiddo',handle:'rittykiddo',xHandle:'@rittykiddo',kind:'social',role:'discovery',identityConfidence:'unresolved'},
+{id:'IoachimViju',handle:'IoachimViju',xHandle:'@IoachimViju',kind:'social',role:'discovery',identityConfidence:'unresolved'},
+{id:'FlapCommunity',handle:'FlapCommunity',xHandle:'@FlapCommunity',kind:'social',role:'discovery',identityConfidence:'unresolved'},
+{id:'votesa',handle:'votesa',xHandle:'@votesa',kind:'social',role:'discovery',identityConfidence:'unresolved'},
+{id:'Chrisbiz96sats',handle:'Chrisbiz96sats',xHandle:'@Chrisbiz96sats',kind:'social',role:'discovery',identityConfidence:'unresolved'},
+{id:'stoopidnobody',handle:'stoopidnobody',xHandle:'@stoopidnobody',kind:'social',role:'discovery',identityConfidence:'unresolved'},
+{id:'ChristianDior31',handle:'ChristianDior31',xHandle:'@ChristianDior31',kind:'social',role:'discovery',identityConfidence:'unresolved'}
 ].map(a=>({...a,enabled:true,sampleSize:a.calls||0,lastEventAt:null}));
 
-function initial(){const now=new Date().toISOString();return{version:8,createdAt:now,updatedAt:now,actors:seedActors,events:[],tokenState:{},marketHistory:{},alerts:[],sync:{lastChainSync:null,lastScannedBlock:null,lastError:null,lastScan:null,alchemyBackfill:null,ws:null,lastLiveTx:null,provider:currentProvider()}}}
+function mergeSeedActors(existing=[]){
+  const remaining=new Map((existing||[]).map(a=>[a.id,a]));
+  const merged=seedActors.map(seed=>{
+    const current=remaining.get(seed.id);
+    if(!current)return{...seed};
+    remaining.delete(seed.id);
+    return{...seed,...current,roleScores:{...(seed.roleScores||{}),...(current.roleScores||{})}};
+  });
+  return[...merged,...remaining.values()];
+}
+
+function initial(){const now=new Date().toISOString();return{version:9,createdAt:now,updatedAt:now,actors:seedActors,events:[],tokenState:{},marketHistory:{},alerts:[],sync:{lastChainSync:null,lastScannedBlock:null,lastError:null,lastScan:null,alchemyBackfill:null,ws:null,lastLiveTx:null,provider:currentProvider()}}}
 const save=()=>storage.save(db);
 const json=(res,status,body)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});res.end(JSON.stringify(body))};
 const auth=(req,token)=>!!token&&req.headers.authorization===`Bearer ${token}`;
@@ -240,7 +270,7 @@ function startLiveSubscriber(){
 }
 
 const server=http.createServer(async(req,res)=>{const u=new URL(req.url,`http://${req.headers.host||'localhost'}`),p=u.pathname;try{
-if(p==='/api/health')return json(res,200,{ok:true,version:8,storage:DATABASE_URL?'postgres':'file',chainId:4663,provider:currentProvider(),webhook:alchemyWebhookConfigured()?'configured':'disabled',backfill:db?.sync?.alchemyBackfill?.status||'pending',calibration:calibration().status,ws:db?.sync?.ws?.state||'disabled',time:new Date().toISOString()});
+if(p==='/api/health')return json(res,200,{ok:true,version:9,storage:DATABASE_URL?'postgres':'file',chainId:4663,provider:currentProvider(),webhook:alchemyWebhookConfigured()?'configured':'disabled',backfill:db?.sync?.alchemyBackfill?.status||'pending',calibration:calibration().status,ws:db?.sync?.ws?.state||'disabled',time:new Date().toISOString()});
 if(p==='/api/dashboard'&&req.method==='GET')return json(res,200,dashboard());
 if(p==='/api/calibration'&&req.method==='GET')return json(res,200,calibration());
 if(p==='/api/webhooks/alchemy'&&req.method==='POST'){
@@ -260,5 +290,5 @@ if(p==='/api/actors/performance'&&req.method==='POST'){if(!auth(req,WRITE_API_TO
 if(staticFile(res,p))return;return json(res,404,{error:'not found'});
 }catch(e){if(db?.sync){db.sync.lastError=e.message;save();}return json(res,500,{error:e.message})}});
 
-(async()=>{db=await storage.init(initial(),x=>{const fresh={...initial(),...x,version:8};fresh.sync={...initial().sync,...(x?.sync||{})};fresh.tokenState=x?.tokenState||{};fresh.marketHistory=x?.marketHistory||{};fresh.events=x?.events||[];fresh.actors=x?.actors?.length?x.actors:seedActors;return fresh});save();server.listen(PORT,()=>{console.log(`Trenches Radar listening on ${PORT} (${DATABASE_URL?'postgres':'file'})`);startLiveSubscriber();})})().catch(e=>{console.error(e);process.exit(1)});
+(async()=>{db=await storage.init(initial(),x=>{const fresh={...initial(),...x,version:9};fresh.sync={...initial().sync,...(x?.sync||{})};fresh.tokenState=x?.tokenState||{};fresh.marketHistory=x?.marketHistory||{};fresh.events=x?.events||[];fresh.actors=mergeSeedActors(x?.actors||[]);return fresh});save();server.listen(PORT,()=>{console.log(`Trenches Radar listening on ${PORT} (${DATABASE_URL?'postgres':'file'})`);startLiveSubscriber();})})().catch(e=>{console.error(e);process.exit(1)});
 process.on('SIGTERM',async()=>{try{liveSubscriber?.stop();}catch{}await storage.close();process.exit(0)});
