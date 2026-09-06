@@ -29,8 +29,9 @@ const gateLabel=value=>({PASS:'OK',CAUTION:'CAUTELA',FAIL:'BLOQUEADO',UNKNOWN:'S
 const roleLabel=value=>({discovery:'descubrimiento',confirmation:'confirmación',execution:'ejecución',reentry:'reentrada',narrative:'narrativa'}[value]||value||'—');
 const reasonText=value=>({
   no_entry_evidence:'Movimiento observado, pero no hay una entrada económica verificada.',
+  social_scout_only:'Descubierto por una fuente social. Lo vigilamos, pero esperamos confirmación económica on-chain.',
   critical_unknown:'Faltan datos críticos de Safety; todavía no puede convertirse en entrada.',
-  needs_second_independent_actor:'Hay una entrada válida, pero falta un segundo actor independiente.',
+  needs_second_independent_actor:'Hay una entrada económica válida, pero falta una segunda entrada independiente.',
   exitability_unknown:'No hay una cotización de salida fiable todavía.',
   entry_window_missed:'La confluencia existe, pero el precio ya se alejó demasiado de la primera entrada.',
   high_confluence:'Confluencia fuerte con Safety y salida verificadas.',
@@ -43,14 +44,17 @@ function providerText(data){
   const provider=data.sync?.provider||data.sync?.lastScan?.discovery;
   const wallets=data.sync?.lastScan?.trackedWallets||data.summary.money;
   const backfill=data.sync?.alchemyBackfill;
+  const social=data.sync?.social;
   const history=backfill?.status==='complete'
     ?` · histórico completo (${backfill.transactions||0} tx)`
     :backfill?.status?` · histórico ${backfill.status}`:'';
+  const socialText=social?.status==='live'?` · Social live (${social.scouts||0} scouts)`:
+    social?.status==='awaiting-key'?' · Social preparado':'';
   if(data.sync?.lastError)return'Feed con error · '+data.sync.lastError;
-  if(provider==='alchemy-webhook')return`Alchemy live · ${wallets} wallets · último webhook ${ago(data.sync.lastWebhookAt)}${history}`;
+  if(provider==='alchemy-webhook')return`Alchemy live · ${wallets} wallets · último webhook ${ago(data.sync.lastWebhookAt)}${history}${socialText}`;
   if(provider==='blockscout-pro'){
     const newEvents=data.sync?.lastScan?.newEvents||0;
-    return`Blockscout live · ${wallets} wallets · ${newEvents} eventos nuevos · sync ${ago(data.sync.lastChainSync)}`;
+    return`Blockscout live · ${wallets} wallets · ${newEvents} eventos nuevos · sync ${ago(data.sync.lastChainSync)}${socialText}`;
   }
   if(provider==='awaiting-blockscout-key'||provider==='awaiting-provider-credentials')return'Motor online · feed on-chain pendiente de provider';
   return'Motor online · preparando feed';
@@ -58,9 +62,13 @@ function providerText(data){
 
 function signalCard(signal){
   const hasEntryEvidence=(signal.events||[]).some(event=>['CALL','BUY','ADD','REENTRY'].includes(event.action));
+  const hasScouts=Number(signal.scoutActors||0)>0;
   const alpha=hasEntryEvidence?`${Number(signal.alpha||0)}/100`:'—';
-  const alphaNote=hasEntryEvidence?'confluencia':'sin entrada válida';
+  const alphaNote=hasEntryEvidence?'confluencia económica':hasScouts?'social no suma Alpha':'sin entrada válida';
   const impact=signal.sellImpactPct!=null?`${Number(signal.sellImpactPct).toFixed(1)}%`:'—';
+  const confluenceLabel=!hasEntryEvidence&&hasScouts?'Scouts':'Confluencia';
+  const confluenceValue=!hasEntryEvidence&&hasScouts?Number(signal.scoutActors||0):Number(signal.independentActors||0);
+  const confluenceNote=!hasEntryEvidence&&hasScouts?'fuentes sociales':'entradas independientes';
   return`<article class="signal-card state-${esc(String(signal.state||'').toLowerCase())}">
     <div class="signal-top">
       <div><b class="token">${esc(signal.symbol||'TOKEN')}</b><span>${esc(ago(signal.lastSeen))}</span></div>
@@ -69,14 +77,14 @@ function signalCard(signal){
     <p class="verdict">${esc(reasonText(signal.reason))}</p>
     <div class="signal-grid">
       <div><span>Alpha</span><b>${esc(alpha)}</b><small>${esc(alphaNote)}</small></div>
-      <div><span>Confluencia</span><b>${Number(signal.independentActors||0)}</b><small>actores independientes</small></div>
+      <div><span>${esc(confluenceLabel)}</span><b>${confluenceValue}</b><small>${esc(confluenceNote)}</small></div>
       <div><span>Safety</span><b>${esc(gateLabel(signal.safety?.status))}</b><small>${esc(signal.safety?.reason||'contrato')}</small></div>
       <div><span>Salida</span><b>${esc(gateLabel(signal.exitabilityGate?.status))}</b><small>${signal.exitabilityTargetUsd?`$${esc(signal.exitabilityTargetUsd)} · impacto ${esc(impact)}`:'quote pendiente'}</small></div>
     </div>
     <div class="market-row"><span>MC <b>${money(signal.currentMarketCap)}</b></span><span>Liquidez <b>${money(signal.liquidityUsd)}</b></span></div>
     <details class="technical"><summary>Ver datos técnicos</summary>
       <p>Contrato <code>${esc(signal.tokenAddress)}</code></p>
-      <p>Score ${esc(signal.score)} · Alpha bruto ${esc(signal.alpha)} · Timing ${esc(signal.timing)} · Exitability ${esc(signal.exitability)}</p>
+      <p>Score ${esc(signal.score)} · Alpha bruto ${esc(signal.alpha)} · Scouts ${esc(signal.scoutActors||0)} · Timing ${esc(signal.timing)} · Exitability ${esc(signal.exitability)}</p>
       <p>Motivo interno: ${esc(signal.reason)}</p>
     </details>
   </article>`;
@@ -96,7 +104,7 @@ function renderSignals(signals){
   const ignored=signals.filter(signal=>signal.state==='IGNORE');
   $('#signalCount').textContent=actionable.length;
   $('#signals').innerHTML=actionable.length?actionable.map(signalCard).join(''):
-    '<div class="empty good-empty"><b>Sin señales accionables ahora</b><span>El radar está observando, pero no fuerza entradas cuando falta evidencia.</span></div>';
+    '<div class="empty good-empty"><b>Sin señales que merezcan atención ahora</b><span>El radar sigue observando money wallets y scouts sociales sin forzar entradas.</span></div>';
   $('#observationsPanel').hidden=!ignored.length;
   $('#ignoredCount').textContent=ignored.length;
   $('#observations').innerHTML=ignored.map(observationCard).join('');
@@ -108,7 +116,7 @@ function renderCalibration(calibration){
   const active=calibration.status==='CALIBRATION_ACTIVE';
   const message=dataset.verifiedEntries
     ?`${dataset.verifiedEntries} compras verificadas · ${dataset.verifiedExits||0} salidas verificadas · ${dataset.completedH1||0} retornos H1 completos.`
-    :`${dataset.events||0} eventos observados · ${dataset.verifiedExits||0} salidas verificadas · todavía 0 compras económicas verificadas. ACQUIRE y TRANSFER_OUT no se usan como performance.`;
+    :`${dataset.events||0} eventos observados · ${dataset.verifiedExits||0} salidas verificadas · todavía 0 compras económicas verificadas. ACQUIRE, TRANSFER_OUT y SCOUT no se usan como performance.`;
   const actorRows=(calibration.actors||[]).map(actor=>{
     const h1=actor.medianReturns?.h1;
     return`<div class="cal-row">
@@ -140,8 +148,9 @@ function actorCard(actor,measured){
 }
 
 function socialActorCard(actor){
+  const feed=actor.fomoUserId?'feed verificado':'candidato';
   return`<article class="actor muted-actor">
-    <div class="actor-main"><b>${esc(actor.xHandle||actor.handle)}</b><span>Social · ${esc(roleLabel(actor.role))} · ${esc(actor.division)} · pendiente de feed live</span></div>
+    <div class="actor-main"><b>${esc(actor.xHandle||actor.handle)}</b><span>Social · ${esc(roleLabel(actor.role))} · ${esc(actor.division)} · ${esc(feed)}</span></div>
     <div class="actor-score"><b>${esc(actor.adaptiveScore)}</b><span>prior</span></div>
   </article>`;
 }
@@ -170,12 +179,12 @@ async function load(){
     $('#entries').textContent=data.summary.entryCandidates;
     $('#dist').textContent=data.summary.distribution;
     $('#fresh').textContent=providerText(data);
-    $('#systemMeta').textContent=`${data.summary.resolved}/${data.summary.actors} identidades con wallet resuelta · ${dataset.events||0} eventos observados`;
+    $('#systemMeta').textContent=`${data.summary.resolved}/${data.summary.actors} identidades con wallet resuelta · ${data.summary.social||0} scouts sociales · ${dataset.events||0} eventos observados`;
     $('#headline').textContent=data.summary.entryCandidates
       ?`${data.summary.entryCandidates} oportunidad${data.summary.entryCandidates===1?'':'es'} de entrada para revisar`
       :data.summary.distribution
         ?`${data.summary.distribution} alerta${data.summary.distribution===1?'':'s'} de distribución activa${data.summary.distribution===1?'':'s'}`
-        :live?'Sin oportunidades de entrada confirmadas ahora':'Radar operativo; esperando datos verificables';
+        :live?'Sin entradas confirmadas; radar ampliado vigilando':'Radar operativo; esperando datos verificables';
     $('#generated').textContent=`Actualizado ${ago(data.generatedAt)}`;
     renderSignals(data.signals||[]);
     renderCalibration(data.calibration);
