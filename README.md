@@ -1,6 +1,6 @@
-# Robinhood Trenches Radar — V2 Adaptive Engine
+# Robinhood Trenches Radar — Beta operativa
 
-MVP móvil/read-only del sistema que estamos diseñando para Robinhood Chain. La V2 pone el **cerebro antes que la interfaz**: actores adaptativos, confluencia independiente, Safety Gate, Exitability y `DO NOT CHASE`.
+Radar móvil/read-only desplegado sobre Robinhood Chain. El sistema combina seguimiento on-chain de Money Wallets, confluencia independiente, Safety Gate, Exitability y calibración con retornos observados. Nunca opera una wallet ni convierte datos incompletos en una recomendación.
 
 ## Qué está implementado
 
@@ -16,18 +16,21 @@ MVP móvil/read-only del sistema que estamos diseñando para Robinhood Chain. La
 - `DO NOT CHASE`: una señal buena se rechaza si el precio se ha alejado demasiado de la primera señal.
 - `DISTRIBUTION`: dos actores independientes reduciendo/saliendo tienen prioridad sobre una señal antigua de compra.
 - Snapshot por evento con `blockNumber`, `blockHash`, `blockTime`, MC y liquidez cuando la fuente los suministra.
+- Feed live firmado de Alchemy para cinco Money Wallets y backfill conservador de siete días.
+- Verificación on-chain de lanzamientos Pons, procedencia de factory/pool y quotes read-only para Exitability.
+- Historial persistente de precio por token y retornos futuros a 5m, 15m, 1h, 3h, 6h, 24h, 3d y 7d.
+- Calibración por wallet con muestra, win rate, mediana, MAE y MFE; sin promoción automática hasta tener entradas económicas verificadas.
 - Estados finales: `IGNORE`, `WATCH`, `ENTRY_CANDIDATE`, `HIGH_CONFLUENCE`, `DO_NOT_CHASE`, `DISTRIBUTION`, `BLOCKED`.
-- PWA móvil con `Morning / Live / Token / Traders / Alerts`.
-- Notificaciones locales del navegador al aparecer Entry/High Confluence/Distribution mientras la PWA está activa y puede refrescar.
-- Demo sintético explícito para probar el motor sin fabricar hallazgos live.
+- PWA móvil con resumen, señales, calibración y ranking adaptativo.
 
-## Fuentes live previstas
+## Fuentes live
 
-1. **Identidad:** FomoScan cuando se proporciona `FOMOSCAN_API_KEY`.
-2. **Wallet truth:** RPC de Robinhood Chain (chain 4663), leyendo Transfer logs y neteando por transacción.
-3. **Market snapshot:** DexScreener.
-4. **Social calls / deployer / structure:** se conectarán como ingestas externas mediante `/api/events` y `/api/token-state`.
-5. **Safety / Exitability:** upstream de diligencia y quotes read-only; el motor considera UNKNOWN cualquier check crítico no resuelto.
+1. **Actividad:** webhook de Alchemy firmado, limitado a las cinco Money Wallets resueltas.
+2. **Histórico:** Alchemy Transfers sobre una ventana de 604.800 bloques, con clasificación económica conservadora.
+3. **Verdad on-chain:** RPC de Robinhood Chain (chain 4663), receipts, logs y contratos.
+4. **Mercado:** DexScreener para precio, market cap y liquidez observados.
+5. **Safety / Exitability:** factories y pools Pons verificados on-chain más quotes read-only al tamaño objetivo.
+6. **Ingesta externa:** `/api/events` y `/api/token-state` para futuras fuentes sociales o de diligencia.
 
 La app no necesita seed phrase, private key ni permiso de trading.
 
@@ -89,32 +92,40 @@ Acciones válidas: `CALL`, `BUY`, `ADD`, `REENTRY`, `ACQUIRE`, `TRIM`, `SELL`, `
 }
 ```
 
+### Consultar calibración observada
+
+`GET /api/calibration`
+
+Devuelve el estado de la muestra por Money Wallet, retornos futuros completados, medianas, MAE y MFE. Si todavía no hay compras económicas verificadas, responde `INSUFFICIENT_VERIFIED_ENTRIES` y conserva las wallets como provisionales.
+
 ## Arranque
 
 ```bash
 cp .env.example .env
+npm install
 node server.js
 ```
 
-Abre `http://localhost:8787`. Para probar la lógica sin fuentes live, usa **Alerts → Cargar demo**. Los tokens demo son claramente sintéticos.
+Abre `http://localhost:8787`.
 
 ## Validación realizada
 
-`npm test` comprueba, entre otras reglas:
+`npm test` ejecuta 29 pruebas y comprueba, entre otras reglas:
 
 - un riesgo crítico bloquea aunque haya alpha;
 - un UNKNOWN crítico nunca se presenta como Entry;
 - una señal que ya corrió demasiado se convierte en `DO_NOT_CHASE`;
 - dos salidas independientes producen `DISTRIBUTION`;
 - muestras pequeñas reciben menos confianza que históricos amplios.
+- actividad receive-only no se etiqueta como compra;
+- los retornos futuros, MAE y MFE se calculan sólo con precios realmente observados.
 
-## Lo que NO está terminado todavía
+## Límites conocidos de la beta
 
-- El backfill completo de las Money Wallets aún debe alimentar `sampleSize`, returns y role scores con resultados reales.
-- Safety Gate live todavía necesita su ingestor de contrato/LP/deployer.
-- Exitability live necesita quotes read-only al tamaño objetivo; no debe aproximarse sólo por TVL.
-- Las notificaciones en segundo plano con la app cerrada se harán en la versión Android final mediante push nativo (FCM o equivalente). La PWA actual no pretende sustituir esa capa.
-- La build APK no está incluida en esta V2; primero queremos validar el motor y sus datos.
+- El backfill disponible no contiene trazas internas nativas en el plan actual de Alchemy; por eso los movimientos sin evidencia económica quedan como `ACQUIRE` o `TRANSFER_OUT`, nunca como BUY/SELL inventados.
+- La calibración necesita acumular compras reales y esperar sus horizontes futuros antes de promover wallets.
+- Las notificaciones nativas en segundo plano y la build APK quedan fuera de esta beta web.
+- El Social Radar mantiene perfiles provisionales hasta conectar una fuente social verificable.
 
 ## Principio operativo
 
@@ -122,7 +133,7 @@ La app no debe decir “compra” porque una wallet popular compró. Sólo crea 
 
 ---
 
-## Railway-ready (v0.3)
+## Railway-ready (v0.4)
 
 Esta variante incorpora persistencia Postgres y separación `app ↔ worker` para Railway:
 
