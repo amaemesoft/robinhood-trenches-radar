@@ -2,7 +2,7 @@
 
 const $=selector=>document.querySelector(selector);
 const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({
-  '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
+  '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'
 }[char]));
 const money=value=>value==null?'—':Number(value)>=1e6
   ?'$'+(Number(value)/1e6).toFixed(2)+'M'
@@ -16,6 +16,13 @@ const ago=value=>{
   if(hours<24)return`hace ${hours} h`;
   return`hace ${Math.floor(hours/24)} d`;
 };
+const leadTime=value=>{
+  if(value==null)return null;
+  const minutes=Number(value);
+  if(!Number.isFinite(minutes))return null;
+  if(minutes<60)return`${Math.round(minutes)} min`;
+  return`${(minutes/60).toFixed(1)} h`;
+};
 const stateLabel=value=>({
   ENTRY_CANDIDATE:'REVISAR ENTRADA',HIGH_CONFLUENCE:'ALTA CONFLUENCIA',DO_NOT_CHASE:'NO PERSEGUIR',
   DISTRIBUTION:'DISTRIBUCIÓN',BLOCKED:'BLOQUEADO',WATCH:'VIGILAR',IGNORE:'SOLO OBSERVADO'
@@ -23,7 +30,8 @@ const stateLabel=value=>({
 const calibrationLabel=value=>({
   INSUFFICIENT_VERIFIED_ENTRIES:'SIN COMPRAS VERIFICADAS',BUILDING_FORWARD_RETURNS:'CONSTRUYENDO RETORNOS',
   CALIBRATION_ACTIVE:'CALIBRACIÓN ACTIVA',NO_VERIFIED_ENTRIES:'SIN ENTRADAS VERIFICADAS',
-  BUILDING_RETURNS:'CONSTRUYENDO MUESTRA',TESTED_READY:'TESTED',CORE_READY:'CORE'
+  BUILDING_RETURNS:'CONSTRUYENDO MUESTRA',BUILDING_SAMPLE:'MUESTRA SOCIAL',NO_SCOUTS:'SIN MUESTRA',
+  TESTED_READY:'TESTED',CORE_READY:'CORE'
 }[value]||value);
 const gateLabel=value=>({PASS:'OK',CAUTION:'CAUTELA',FAIL:'BLOQUEADO',UNKNOWN:'SIN CONFIRMAR'}[value]||value||'SIN CONFIRMAR');
 const roleLabel=value=>({discovery:'descubrimiento',confirmation:'confirmación',execution:'ejecución',reentry:'reentrada',narrative:'narrativa'}[value]||value||'—');
@@ -114,9 +122,10 @@ function renderCalibration(calibration){
   if(!calibration){$('#calibration').innerHTML='<div class="empty">Calibración todavía no disponible.</div>';return;}
   const dataset=calibration.dataset||{};
   const active=calibration.status==='CALIBRATION_ACTIVE';
+  const socialText=dataset.socialScouts?` · ${dataset.socialScouts} descubrimientos sociales · ${dataset.socialConfirmed||0} confirmados por money`:'';
   const message=dataset.verifiedEntries
-    ?`${dataset.verifiedEntries} compras verificadas · ${dataset.verifiedExits||0} salidas verificadas · ${dataset.completedH1||0} retornos H1 completos.`
-    :`${dataset.events||0} eventos observados · ${dataset.verifiedExits||0} salidas verificadas · todavía 0 compras económicas verificadas. ACQUIRE, TRANSFER_OUT y SCOUT no se usan como performance.`;
+    ?`${dataset.verifiedEntries} compras verificadas · ${dataset.verifiedExits||0} salidas verificadas · ${dataset.completedH1||0} retornos H1 completos${socialText}.`
+    :`${dataset.events||0} eventos observados · ${dataset.verifiedExits||0} salidas verificadas · todavía 0 compras económicas verificadas${socialText}. ACQUIRE, TRANSFER_OUT y SCOUT no se usan como performance de entrada.`;
   const actorRows=(calibration.actors||[]).map(actor=>{
     const h1=actor.medianReturns?.h1;
     return`<div class="cal-row">
@@ -147,21 +156,35 @@ function actorCard(actor,measured){
   </article>`;
 }
 
-function socialActorCard(actor){
+function socialActorCard(actor,measured){
+  const scouts=Number(measured?.scouts||0);
+  const confirmed=Number(measured?.confirmed||0);
+  const pending=Number(measured?.pending||0);
+  const rate=measured?.confirmationRate;
+  const lead=leadTime(measured?.medianLeadMinutes);
+  const evidence=scouts
+    ?`${scouts} descubierto${scouts===1?'':'s'} · ${confirmed} confirmado${confirmed===1?'':'s'} por money${pending?` · ${pending} pendiente${pending===1?'':'s'}`:''}${lead?` · ventaja mediana ${lead}`:''}`
+    :'sin descubrimientos con CA exacta todavía';
+  const measuredStatus=calibrationLabel(measured?.status||'NO_SCOUTS');
   return`<article class="actor muted-actor">
-    <div class="actor-main"><b>${esc(actor.xHandle||actor.handle)}</b><span>Social · ${esc(roleLabel(actor.role))} · ${esc(actor.division)} · feed público monitorizado</span></div>
-    <div class="actor-score"><b>${esc(actor.adaptiveScore)}</b><span>prior</span></div>
+    <div class="actor-main">
+      <b>${esc(actor.xHandle||actor.handle)}</b>
+      <span>Social · ${esc(roleLabel(actor.role))} · ${esc(measuredStatus)} · feed público monitorizado</span>
+      <small>${esc(evidence)} · prior técnico ${esc(actor.adaptiveScore)}</small>
+    </div>
+    <div class="actor-score"><b>${rate!=null?`${Number(rate).toFixed(0)}%`:'—'}</b><span>${rate!=null?'confirmados':'muestra real'}</span></div>
   </article>`;
 }
 
 function renderActors(data){
   const calibrationByActor=new Map((data.calibration?.actors||[]).map(actor=>[actor.actorId,actor]));
+  const socialByActor=new Map((data.calibration?.socialActors||[]).map(actor=>[actor.actorId,actor]));
   const moneyActors=data.actors.filter(actor=>actor.kind==='money');
   const socialActors=data.actors.filter(actor=>actor.kind==='social');
   $('#actors').innerHTML=moneyActors.map(actor=>actorCard(actor,calibrationByActor.get(actor.id))).join('');
   $('#socialPanel').hidden=!socialActors.length;
   $('#socialCount').textContent=socialActors.length;
-  $('#socialActors').innerHTML=socialActors.map(socialActorCard).join('');
+  $('#socialActors').innerHTML=socialActors.map(actor=>socialActorCard(actor,socialByActor.get(actor.id))).join('');
 }
 
 async function load(){
