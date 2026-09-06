@@ -8,6 +8,7 @@ const Storage=require('./lib/storage');
 const ChainScanner=require('./lib/chainScanner');
 const LiveSubscriber=require('./lib/liveSubscriber');
 const AlchemyWebhook=require('./lib/alchemyWebhook');
+const {TokenIntelligence}=require('./lib/tokenIntelligence');
 
 const PORT=Number(process.env.PORT||8787);
 const DATABASE_URL=process.env.DATABASE_URL||'';
@@ -20,9 +21,12 @@ const ALCHEMY_WEBHOOK_ID=process.env.ALCHEMY_WEBHOOK_ID||'';
 const ALCHEMY_WEBHOOK_SIGNING_KEY=process.env.ALCHEMY_WEBHOOK_SIGNING_KEY||'';
 const BACKFILL_BLOCKS=Number(process.env.BACKFILL_BLOCKS||1200);
 const MAX_BLOCK_RANGE=Number(process.env.MAX_BLOCK_RANGE||500);
+const EXIT_PRIMARY_TARGET_USD=Number(process.env.EXIT_PRIMARY_TARGET_USD||250);
+const EXIT_TARGETS_USD=String(process.env.EXIT_TARGETS_USD||'100,250,1000').split(',').map(Number).filter(n=>Number.isFinite(n)&&n>0);
 const ROOT=__dirname, PUBLIC=path.join(ROOT,'public'), DB_FILE=path.join(ROOT,'data','db.json');
 const storage=new Storage({filePath:DB_FILE,databaseUrl:DATABASE_URL});
 const scanner=new ChainScanner({rpcUrl:RH_RPC_URL,blockscoutApiKey:BLOCKSCOUT_API_KEY,backfillBlocks:BACKFILL_BLOCKS,maxBlockRange:MAX_BLOCK_RANGE});
+const intelligence=new TokenIntelligence({rpc:scanner.rpc.bind(scanner),targetsUsd:EXIT_TARGETS_USD,primaryTargetUsd:EXIT_PRIMARY_TARGET_USD});
 let db;
 let syncRunning=false;
 let liveSubscriber=null;
@@ -46,7 +50,7 @@ const seedActors=[
 {id:'damskotrades',handle:'damskotrades',xHandle:'@damskotrades',kind:'social',role:'confirmation',identityConfidence:'unresolved',copyability:83,roleScores:{discovery:61,confirmation:84,narrative:78}}
 ].map(a=>({...a,enabled:true,sampleSize:a.calls||0,lastEventAt:null}));
 
-function initial(){const now=new Date().toISOString();return{version:5,createdAt:now,updatedAt:now,actors:seedActors,events:[],tokenState:{},alerts:[],sync:{lastChainSync:null,lastScannedBlock:null,lastError:null,lastScan:null,ws:null,lastLiveTx:null,provider:currentProvider()}}}
+function initial(){const now=new Date().toISOString();return{version:6,createdAt:now,updatedAt:now,actors:seedActors,events:[],tokenState:{},alerts:[],sync:{lastChainSync:null,lastScannedBlock:null,lastError:null,lastScan:null,ws:null,lastLiveTx:null,provider:currentProvider()}}}
 const save=()=>storage.save(db);
 const json=(res,status,body)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});res.end(JSON.stringify(body))};
 const auth=(req,token)=>!!token&&req.headers.authorization===`Bearer ${token}`;
@@ -55,7 +59,7 @@ function body(req){return rawBody(req).then(s=>{try{return s?JSON.parse(s):{}}ca
 function staticFile(res,p){let rel=p==='/'?'index.html':p.replace(/^\//,'');rel=path.normalize(rel).replace(/^\.\.(\/|\\|$)/,'');const f=path.join(PUBLIC,rel);if(!f.startsWith(PUBLIC)||!fs.existsSync(f)||fs.statSync(f).isDirectory())return false;const ext=path.extname(f);const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.webmanifest':'application/manifest+json'};res.writeHead(200,{'content-type':types[ext]||'application/octet-stream','cache-control':ext==='.html'?'no-cache':'public,max-age=300'});fs.createReadStream(f).pipe(res);return true}
 function actorMap(){const out={};for(const a of db.actors){a.adaptiveScore=Engine.adaptiveActorScore(a);a.division=Engine.division(a.sampleSize||a.calls||0,a.kind);out[a.id]=a}return out}
 function moneyWalletMap(){return new Map(db.actors.filter(a=>a.kind==='money'&&a.enabled!==false&&/^0x[a-fA-F0-9]{40}$/.test(a.evmAddress||'')).map(a=>[a.evmAddress.toLowerCase(),a]));}
-function signals(){const actors=actorMap(),groups=new Map(),cut=Date.now()-24*3600e3;for(const e of db.events){if(new Date(e.at).getTime()<cut)continue;(groups.get(e.tokenAddress)||groups.set(e.tokenAddress,[]).get(e.tokenAddress)).push(e)}const out=[];for(const[address,events]of groups){const st=db.tokenState[address]||{};const latest=[...events].sort((a,b)=>new Date(b.at)-new Date(a.at))[0];const result=Engine.evaluateToken({events,actors,safety:st.safety||{},execution:{...(st.execution||{}),currentMarketCap:st.marketCap||latest.marketCap||null},token:{marketCap:st.marketCap||latest.marketCap||null}});out.push({tokenAddress:address,symbol:latest.symbol||address.slice(0,8),lastSeen:latest.at,events,...result,liquidityUsd:st.execution?.liquidityUsd||null,priceUsd:st.priceUsd||null})}return out.sort((a,b)=>b.score-a.score)}
+function signals(){const actors=actorMap(),groups=new Map(),cut=Date.now()-24*3600e3;for(const e of db.events){if(new Date(e.at).getTime()<cut)continue;(groups.get(e.tokenAddress)||groups.set(e.tokenAddress,[]).get(e.tokenAddress)).push(e)}const out=[];for(const[address,events]of groups){const st=db.tokenState[address]||{};const latest=[...events].sort((a,b)=>new Date(b.at)-new Date(a.at))[0];const result=Engine.evaluateToken({events,actors,safety:st.safety||{},execution:{...(st.execution||{}),currentMarketCap:st.marketCap||latest.marketCap||null},token:{marketCap:st.marketCap||latest.marketCap||null}});out.push({tokenAddress:address,symbol:latest.symbol||address.slice(0,8),lastSeen:latest.at,events,...result,liquidityUsd:st.execution?.liquidityUsd||null,priceUsd:st.priceUsd||null,exitabilityTargetUsd:st.execution?.exitabilityTargetUsd||null,sellImpactPct:st.execution?.sellImpactPct??null,exitQuotes:st.execution?.exitQuotes||[],safetyEvidence:st.safetyEvidence||null})}return out.sort((a,b)=>b.score-a.score)}
 function dashboard(){const actors=Object.values(actorMap());const ss=signals();return{generatedAt:new Date().toISOString(),summary:{actors:actors.length,money:actors.filter(a=>a.kind==='money').length,social:actors.filter(a=>a.kind==='social').length,resolved:actors.filter(a=>a.evmAddress).length,entryCandidates:ss.filter(s=>['ENTRY_CANDIDATE','HIGH_CONFLUENCE'].includes(s.state)).length,distribution:ss.filter(s=>s.state==='DISTRIBUTION').length},signals:ss,recentEvents:db.events.slice(0,100),actors:actors.sort((a,b)=>b.adaptiveScore-a.adaptiveScore),sync:db.sync}}
 
 function mergeTokenState(address,state){
@@ -82,11 +86,20 @@ async function storeEvents(rows,tokenStates={}){
   return fresh;
 }
 
+async function buildTokenState(token,force=false){
+  const m=await scanner.market(token,force);
+  const marketState=m?{
+    marketCap:m.marketCap,priceUsd:m.priceUsd,priceNative:m.priceNative,fdv:m.fdv,
+    execution:{liquidityUsd:m.liquidityUsd,pairAddress:m.pairAddress,dexId:m.dexId,quoteTokenAddress:m.quoteTokenAddress,marketSource:m.marketSource}
+  }:{};
+  const intel=await intelligence.inspect(token,m||{},{force});
+  return{...marketState,...intel,execution:{...(marketState.execution||{}),...(intel.execution||{})}};
+}
+
 async function enrichTokens(tokens){
   const tokenStates={};
   for(const token of [...new Set(tokens||[])]){
-    const m=await scanner.market(token,true);
-    if(m)tokenStates[token]={marketCap:m.marketCap,priceUsd:m.priceUsd,fdv:m.fdv,execution:{liquidityUsd:m.liquidityUsd,pairAddress:m.pairAddress,dexId:m.dexId,marketSource:m.marketSource}};
+    tokenStates[token]=await buildTokenState(token,true);
   }
   for(const [address,state] of Object.entries(tokenStates))mergeTokenState(address,state);
   save();await storage.flush();
@@ -100,8 +113,7 @@ async function ingestLiveTx(txHash){
   const rows=await scanner.analyzeTx(txHash,moneyWalletMap());
   const tokenStates={};
   for(const token of [...new Set(rows.map(e=>e.tokenAddress))]){
-    const m=await scanner.market(token,true);
-    if(m)tokenStates[token]={marketCap:m.marketCap,priceUsd:m.priceUsd,fdv:m.fdv,execution:{liquidityUsd:m.liquidityUsd,pairAddress:m.pairAddress,dexId:m.dexId,marketSource:m.marketSource}};
+    tokenStates[token]=await buildTokenState(token,true);
   }
   const fresh=await storeEvents(rows,tokenStates);
   db.sync={...(db.sync||{}),lastChainSync:new Date().toISOString(),lastLiveTx:txHash,lastError:null,lastLiveEvents:fresh.length};
@@ -135,13 +147,20 @@ async function runLiveSync(){
   try{
     if(alchemyWebhookConfigured()&&!scanner.hasPro()){
       const now=new Date().toISOString();
-      const lastScan={fromBlock:db.sync?.lastScannedBlock??null,toBlock:db.sync?.lastScannedBlock??null,transactions:0,transferRecords:0,pages:0,newEvents:0,trackedWallets:moneyWalletMap().size,discovery:'alchemy-webhook',providerReady:true,creditsRemaining:null,rateRemaining:null};
+      const staleBefore=Date.now()-15*60*1000;
+      const due=[...new Set(db.events.filter(e=>new Date(e.at).getTime()>Date.now()-24*3600e3).map(e=>e.tokenAddress))]
+        .filter(token=>{const at=Date.parse(db.tokenState[token]?.safetyEvidence?.evaluatedAt||'');return!Number.isFinite(at)||at<staleBefore}).slice(0,8);
+      let enrichedTokens=0;
+      for(const token of due){mergeTokenState(token,await buildTokenState(token,true));enrichedTokens++;}
+      const lastScan={fromBlock:db.sync?.lastScannedBlock??null,toBlock:db.sync?.lastScannedBlock??null,transactions:0,transferRecords:0,pages:0,newEvents:0,enrichedTokens,trackedWallets:moneyWalletMap().size,discovery:'alchemy-webhook',providerReady:true,creditsRemaining:null,rateRemaining:null};
       db.sync={...(db.sync||{}),lastChainSync:now,lastError:null,chainId:4663,provider:'alchemy-webhook',lastScan};
       save();await storage.flush();
       return{ok:true,...lastScan,lastChainSync:now};
     }
     const existingKeys=new Set(db.events.map(e=>e.key).filter(Boolean));
     const result=await scanner.scan({actors:db.actors,sync:db.sync||{},existingKeys});
+    result.tokenStates=result.tokenStates||{};
+    for(const token of [...new Set((result.events||[]).map(e=>e.tokenAddress))])result.tokenStates[token]=await buildTokenState(token,true);
     const fresh=await storeEvents(result.events||[],result.tokenStates||{});
     db.sync={...(db.sync||{}),lastChainSync:new Date().toISOString(),lastScannedBlock:result.toBlock??db.sync?.lastScannedBlock??null,lastError:null,chainId:4663,provider:result.discovery,lastScan:{fromBlock:result.fromBlock,toBlock:result.toBlock,transactions:result.transactions||0,transferRecords:result.transferRecords||0,pages:result.pages||0,newEvents:fresh.length,trackedWallets:result.trackedWallets||0,discovery:result.discovery,providerReady:result.providerReady!==false,creditsRemaining:result.creditsRemaining??null,rateRemaining:result.rateRemaining??null}};
     save();await storage.flush();
@@ -161,7 +180,7 @@ function startLiveSubscriber(){
 }
 
 const server=http.createServer(async(req,res)=>{const u=new URL(req.url,`http://${req.headers.host||'localhost'}`),p=u.pathname;try{
-if(p==='/api/health')return json(res,200,{ok:true,version:5,storage:DATABASE_URL?'postgres':'file',chainId:4663,provider:currentProvider(),webhook:alchemyWebhookConfigured()?'configured':'disabled',ws:db?.sync?.ws?.state||'disabled',time:new Date().toISOString()});
+if(p==='/api/health')return json(res,200,{ok:true,version:6,storage:DATABASE_URL?'postgres':'file',chainId:4663,provider:currentProvider(),webhook:alchemyWebhookConfigured()?'configured':'disabled',ws:db?.sync?.ws?.state||'disabled',time:new Date().toISOString()});
 if(p==='/api/dashboard'&&req.method==='GET')return json(res,200,dashboard());
 if(p==='/api/webhooks/alchemy'&&req.method==='POST'){
   if(!alchemyWebhookConfigured())return json(res,503,{error:'alchemy webhook not configured'});
@@ -180,5 +199,5 @@ if(p==='/api/actors/performance'&&req.method==='POST'){if(!auth(req,WRITE_API_TO
 if(staticFile(res,p))return;return json(res,404,{error:'not found'});
 }catch(e){if(db?.sync){db.sync.lastError=e.message;save();}return json(res,500,{error:e.message})}});
 
-(async()=>{db=await storage.init(initial(),x=>{const fresh={...initial(),...x,version:5};fresh.sync={...initial().sync,...(x?.sync||{})};fresh.tokenState=x?.tokenState||{};fresh.events=x?.events||[];fresh.actors=x?.actors?.length?x.actors:seedActors;return fresh});save();server.listen(PORT,()=>{console.log(`Trenches Radar listening on ${PORT} (${DATABASE_URL?'postgres':'file'})`);startLiveSubscriber();})})().catch(e=>{console.error(e);process.exit(1)});
+(async()=>{db=await storage.init(initial(),x=>{const fresh={...initial(),...x,version:6};fresh.sync={...initial().sync,...(x?.sync||{})};fresh.tokenState=x?.tokenState||{};fresh.events=x?.events||[];fresh.actors=x?.actors?.length?x.actors:seedActors;return fresh});save();server.listen(PORT,()=>{console.log(`Trenches Radar listening on ${PORT} (${DATABASE_URL?'postgres':'file'})`);startLiveSubscriber();})})().catch(e=>{console.error(e);process.exit(1)});
 process.on('SIGTERM',async()=>{try{liveSubscriber?.stop();}catch{}await storage.close();process.exit(0)});

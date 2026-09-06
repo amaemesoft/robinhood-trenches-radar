@@ -50,3 +50,25 @@ test('separate BUY transactions remain independent',()=>{
   assert.equal(result.independentActors,2);
   assert.deepEqual(new Set(result.actorIds),new Set(['alpha','beta']));
 });
+
+test('two independent buys cannot become Entry while exitability is unknown',()=>{
+  const events=[
+    {actorId:'alpha',action:'BUY',txHash:'0xone',signalRole:'execution'},
+    {actorId:'beta',action:'BUY',txHash:'0xtwo',signalRole:'execution'}
+  ];
+  const result=Engine.evaluateToken({events,actors,safety:PASS,execution:{liquidityUsd:500000}});
+  assert.equal(result.state,'WATCH');
+  assert.equal(result.reason,'exitability_unknown');
+  assert.equal(result.exitabilityGate.status,'UNKNOWN');
+});
+
+test('unacceptable quoted sell impact blocks an otherwise valid candidate',()=>{
+  const events=[
+    {actorId:'alpha',action:'BUY',txHash:'0xone',signalRole:'execution'},
+    {actorId:'beta',action:'BUY',txHash:'0xtwo',signalRole:'execution'}
+  ];
+  const result=Engine.evaluateToken({events,actors,safety:PASS,execution:{liquidityUsd:500000,sellImpactPct:25}});
+  assert.equal(result.state,'BLOCKED');
+  assert.equal(result.reason,'exitability:sell_impact_gt_20pct');
+  assert.equal(result.exitabilityGate.status,'FAIL');
+});
