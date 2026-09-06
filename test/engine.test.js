@@ -29,9 +29,12 @@ test('social SCOUT creates WATCH without creating Alpha',()=>{
   assert.equal(result.independentActors,0);
   assert.equal(result.scoutActors,1);
   assert.equal(result.alpha,0);
+  assert.ok(result.discovery>0);
+  assert.ok(result.priorityScore>0);
 });
 
-test('multiple social SCOUTs still cannot become an entry signal',()=>{
+test('multiple social SCOUTs increase discovery priority but still cannot become an entry signal',()=>{
+  const one=Engine.evaluateToken({events:[{actorId:'scout',action:'SCOUT'}],actors,safety:PASS,execution:{sellImpactPct:1,liquidityUsd:500000}});
   const events=[{actorId:'scout',action:'SCOUT'},{actorId:'beta',action:'SCOUT'}];
   const result=Engine.evaluateToken({events,actors,safety:PASS,execution:{sellImpactPct:1,liquidityUsd:500000}});
   assert.equal(result.state,'WATCH');
@@ -39,6 +42,8 @@ test('multiple social SCOUTs still cannot become an entry signal',()=>{
   assert.equal(result.scoutActors,2);
   assert.equal(result.independentActors,0);
   assert.equal(result.alpha,0);
+  assert.ok(result.discovery>=one.discovery);
+  assert.ok(result.priorityScore>=one.priorityScore);
 });
 
 test('social SCOUT does not satisfy second independent economic actor requirement',()=>{
@@ -51,6 +56,7 @@ test('social SCOUT does not satisfy second independent economic actor requiremen
   assert.equal(result.reason,'needs_second_independent_actor');
   assert.equal(result.independentActors,1);
   assert.equal(result.scoutActors,1);
+  assert.ok(result.discovery>0);
 });
 
 test('same-transaction fan-out collapses actors into one independent source',()=>{
