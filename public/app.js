@@ -91,9 +91,36 @@ function evidenceChip(label,value,tone=''){
   return`<span class="evidence-chip ${esc(tone)}"><small>${esc(label)}</small><b>${esc(value)}</b></span>`;
 }
 
-function signalCard(signal,actorsById){
+function measuredSocialScore(signal,socialByActor){
+  const scores=(signal.scoutActorIds||[])
+    .map(id=>Number(socialByActor.get(id)?.discoveryScore))
+    .filter(Number.isFinite)
+    .sort((a,b)=>b-a)
+    .slice(0,3);
+  if(!scores.length)return Number(signal.discovery||0);
+  const weights=[0.52,0.30,0.18];
+  const weighted=scores.reduce((sum,value,index)=>sum+value*weights[index],0);
+  const bonus=Math.min(10,Math.max(0,Number(signal.scoutActors||scores.length)-1)*3);
+  return Math.max(0,Math.min(100,Math.round(weighted+bonus)));
+}
+
+function dynamicPriority(signal,socialByActor){
+  const discovery=measuredSocialScore(signal,socialByActor);
+  const score=Number(signal.score||0);
+  const timing=Number(signal.timing||50);
+  const exitability=Number(signal.exitability||50);
+  const hasEntryEvidence=(signal.events||[]).some(event=>['CALL','BUY','ADD','REENTRY'].includes(event.action));
+  const value=hasEntryEvidence
+    ?0.68*score+0.22*discovery+0.10*timing
+    :0.72*discovery+0.18*timing+0.10*exitability;
+  return Math.max(0,Math.min(100,Math.round(value)));
+}
+
+function signalCard(signal,actorsById,socialByActor){
   const hasEntryEvidence=(signal.events||[]).some(event=>['CALL','BUY','ADD','REENTRY'].includes(event.action));
   const alpha=hasEntryEvidence?`${Number(signal.alpha||0)}/100`:'—';
+  const discovery=measuredSocialScore(signal,socialByActor);
+  const priority=dynamicPriority(signal,socialByActor);
   const decision=decisionCopy(signal);
   const impact=signal.sellImpactPct!=null?`${Number(signal.sellImpactPct).toFixed(1)}%`:'—';
   const moneyActors=Number(signal.independentActors||0);
@@ -113,7 +140,7 @@ function signalCard(signal,actorsById){
     <p class="verdict">${esc(reasonText(signal.reason))}</p>
     <div class="evidence-row">
       ${evidenceChip('Money',moneyActors?`${moneyActors} independiente${moneyActors===1?'':'s'}`:'sin confirmar',moneyActors>=2?'positive':'')}
-      ${evidenceChip('Social',scouts?`${scouts} scout${scouts===1?'':'s'}`:'sin scout',scouts?'info':'')}
+      ${evidenceChip('Social',scouts?`${scouts} · D${discovery}`:'sin scout',scouts?'info':'')}
       ${evidenceChip('Safety',gateLabel(signal.safety?.status),signal.safety?.status==='PASS'?'positive':signal.safety?.status==='FAIL'?'negative':'')}
       ${evidenceChip('Salida',gateLabel(signal.exitabilityGate?.status),signal.exitabilityGate?.status==='PASS'?'positive':signal.exitabilityGate?.status==='FAIL'?'negative':'')}
     </div>
@@ -126,7 +153,7 @@ function signalCard(signal,actorsById){
     </div>
     <details class="technical"><summary>Ver datos técnicos</summary>
       <p>Contrato <code>${esc(signal.tokenAddress)}</code></p>
-      <p>Alpha económico ${esc(alpha)} · Descubrimiento social ${esc(signal.discovery??0)}/100 · Score de entrada ${esc(signal.score)} · Prioridad ${esc(signal.priorityScore??signal.score)}.</p>
+      <p>Alpha económico ${esc(alpha)} · Discovery medido ${esc(discovery)}/100 · Score de entrada ${esc(signal.score)} · Prioridad dinámica ${esc(priority)}.</p>
       <p>Timing ${esc(signal.timing)} · Exitability ${esc(signal.exitability)} · impacto de venta ${esc(impact)}.</p>
       <p>Motivo interno: ${esc(signal.reason)}</p>
     </details>
@@ -142,16 +169,17 @@ function observationCard(signal){
   </article>`;
 }
 
-function renderSignals(signals,actors){
+function renderSignals(signals,actors,calibration){
   const actorsById=new Map((actors||[]).map(actor=>[actor.id,actor]));
+  const socialByActor=new Map((calibration?.socialActors||[]).map(actor=>[actor.actorId,actor]));
   const actionable=signals.filter(signal=>signal.state!=='IGNORE').sort((a,b)=>{
     const stateDiff=statePriority(b.state)-statePriority(a.state);
     if(stateDiff)return stateDiff;
-    return Number(b.priorityScore??b.score??0)-Number(a.priorityScore??a.score??0);
+    return dynamicPriority(b,socialByActor)-dynamicPriority(a,socialByActor);
   });
   const ignored=signals.filter(signal=>signal.state==='IGNORE');
   $('#signalCount').textContent=actionable.length;
-  $('#signals').innerHTML=actionable.length?actionable.map(signal=>signalCard(signal,actorsById)).join(''):
+  $('#signals').innerHTML=actionable.length?actionable.map(signal=>signalCard(signal,actorsById,socialByActor)).join(''):
     '<div class="empty good-empty"><b>Sin acción ahora</b><span>El radar sigue observando money wallets y scouts sociales. No fuerza entradas cuando faltan confirmaciones.</span></div>';
   $('#observationsPanel').hidden=!ignored.length;
   $('#ignoredCount').textContent=ignored.length;
@@ -162,7 +190,7 @@ function renderCalibration(calibration){
   if(!calibration){$('#calibration').innerHTML='<div class="empty">Calibración todavía no disponible.</div>';return;}
   const dataset=calibration.dataset||{};
   const active=calibration.status==='CALIBRATION_ACTIVE';
-  const socialText=dataset.socialScouts?` · ${dataset.socialScouts} descubrimientos sociales · ${dataset.socialConfirmed||0} confirmados por money`:'';
+  const socialText=dataset.socialScouts?` · ${dataset.socialScouts} descubrimientos sociales · ${dataset.socialConfirmed||0} confirmados por money · ${dataset.socialResolved||0} ya resueltos`:'';
   const message=dataset.verifiedEntries
     ?`${dataset.verifiedEntries} compras verificadas · ${dataset.verifiedExits||0} salidas verificadas · ${dataset.completedH1||0} retornos H1 completos${socialText}.`
     :`${dataset.events||0} eventos observados · ${dataset.verifiedExits||0} salidas verificadas · todavía 0 compras económicas verificadas${socialText}. ACQUIRE, TRANSFER_OUT y SCOUT no se usan como performance de entrada.`;
@@ -200,19 +228,22 @@ function socialActorCard(actor,measured){
   const scouts=Number(measured?.scouts||0);
   const confirmed=Number(measured?.confirmed||0);
   const pending=Number(measured?.pending||0);
+  const resolved=Number(measured?.resolved||0);
   const rate=measured?.confirmationRate;
   const lead=leadTime(measured?.medianLeadMinutes);
+  const score=Number(measured?.discoveryScore??actor.measuredDiscoveryScore??actor.roleScores?.discovery??50);
+  const confidence=Number(measured?.discoveryConfidencePct??actor.socialDiscoveryConfidence??0);
   const evidence=scouts
-    ?`${scouts} descubierto${scouts===1?'':'s'} · ${confirmed} confirmado${confirmed===1?'':'s'} por money${pending?` · ${pending} pendiente${pending===1?'':'s'}`:''}${lead?` · ventaja mediana ${lead}`:''}`
+    ?`${scouts} descubierto${scouts===1?'':'s'} · ${confirmed} confirmado${confirmed===1?'':'s'} por money${rate!=null?` · ${Number(rate).toFixed(0)}% confirmación`:''}${pending?` · ${pending} pendiente${pending===1?'':'s'}`:''}${lead?` · ventaja mediana ${lead}`:''}`
     :'sin descubrimientos con CA exacta todavía';
   const measuredStatus=calibrationLabel(measured?.status||'NO_SCOUTS');
   return`<article class="actor muted-actor">
     <div class="actor-main">
       <b>${esc(actor.xHandle||actor.handle)}</b>
-      <span>Social · ${esc(roleLabel(actor.role))} · ${esc(measuredStatus)} · feed público live</span>
+      <span>Social · ${esc(roleLabel(actor.role))} · ${esc(measuredStatus)} · confianza ${confidence.toFixed(0)}%</span>
       <small>${esc(evidence)}</small>
     </div>
-    <div class="actor-score"><b>${rate!=null?`${Number(rate).toFixed(0)}%`:'—'}</b><span>${rate!=null?'confirmados':'muestra real'}</span></div>
+    <div class="actor-score"><b>${esc(score)}</b><span>${resolved?'peso Discovery':'prior Discovery'}</span></div>
   </article>`;
 }
 
@@ -222,9 +253,10 @@ function renderActors(data){
   const moneyActors=data.actors.filter(actor=>actor.kind==='money');
   const socialActors=data.actors.filter(actor=>actor.kind==='social').sort((a,b)=>{
     const am=socialByActor.get(a.id),bm=socialByActor.get(b.id);
-    const ar=am?.confirmationRate??-1,br=bm?.confirmationRate??-1;
-    if(br!==ar)return br-ar;
-    return Number(bm?.scouts||0)-Number(am?.scouts||0);
+    const as=Number(am?.discoveryScore??a.measuredDiscoveryScore??a.roleScores?.discovery??50);
+    const bs=Number(bm?.discoveryScore??b.measuredDiscoveryScore??b.roleScores?.discovery??50);
+    if(bs!==as)return bs-as;
+    return Number(bm?.resolved||0)-Number(am?.resolved||0);
   });
   $('#moneyCount').textContent=moneyActors.length;
   $('#actors').innerHTML=moneyActors.map(actor=>actorCard(actor,calibrationByActor.get(actor.id))).join('');
@@ -277,7 +309,7 @@ async function load(){
     $('#headline').textContent=hero.headline;
     $('#decisionNote').textContent=hero.note;
     $('#generated').textContent=`Actualizado ${ago(data.generatedAt)}`;
-    renderSignals(data.signals||[],data.actors||[]);
+    renderSignals(data.signals||[],data.actors||[],data.calibration);
     renderCalibration(data.calibration);
     renderActors(data);
   }catch(error){
