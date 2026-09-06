@@ -148,9 +148,8 @@ function actorCard(actor,measured){
 }
 
 function socialActorCard(actor){
-  const feed=actor.fomoUserId?'feed verificado':'candidato';
   return`<article class="actor muted-actor">
-    <div class="actor-main"><b>${esc(actor.xHandle||actor.handle)}</b><span>Social · ${esc(roleLabel(actor.role))} · ${esc(actor.division)} · ${esc(feed)}</span></div>
+    <div class="actor-main"><b>${esc(actor.xHandle||actor.handle)}</b><span>Social · ${esc(roleLabel(actor.role))} · ${esc(actor.division)} · feed público monitorizado</span></div>
     <div class="actor-score"><b>${esc(actor.adaptiveScore)}</b><span>prior</span></div>
   </article>`;
 }
@@ -179,7 +178,7 @@ async function load(){
     $('#entries').textContent=data.summary.entryCandidates;
     $('#dist').textContent=data.summary.distribution;
     $('#fresh').textContent=providerText(data);
-    $('#systemMeta').textContent=`${data.summary.resolved}/${data.summary.actors} identidades con wallet resuelta · ${data.summary.social||0} scouts sociales · ${dataset.events||0} eventos observados`;
+    $('#systemMeta').textContent=`${data.summary.resolved}/${data.summary.actors} identidades con wallet resuelta · ${data.summary.social||0} scouts sociales monitorizados · ${dataset.events||0} eventos observados`;
     $('#headline').textContent=data.summary.entryCandidates
       ?`${data.summary.entryCandidates} oportunidad${data.summary.entryCandidates===1?'':'es'} de entrada para revisar`
       :data.summary.distribution
