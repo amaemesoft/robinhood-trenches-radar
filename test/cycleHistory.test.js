@@ -31,8 +31,8 @@ test('material drawdown with strong recovery earns measured resilience',()=>{
   assert.ok(r.confidence>0.5);
 });
 
-test('material drawdown that stays broken scores low',()=>{
-  const prices=[1,1.08,1.1,0.9,0.7,0.5,0.42,0.39,0.4,0.41,0.4,0.38,0.37,0.36,0.35,0.34];
+test('material drawdown that stays broken scores low only after the trough is old enough',()=>{
+  const prices=[1,1.08,1.1,0.9,0.7,0.5,0.42,0.36,0.34,0.35,0.36,0.35,0.36,0.35,0.36,0.36];
   const rows=prices.map((p,i)=>row(i*6,p,i<7?150000:45000));
   const r=History.longHorizonResilience(rows,{minSnapshots:12,minHistoryHours:36,minPostStressHours:12});
   assert.equal(r.status,'MEASURED');
