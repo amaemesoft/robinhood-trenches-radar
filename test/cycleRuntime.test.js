@@ -35,3 +35,30 @@ test('metrics exposes current holder snapshot while growth remains unknown with 
   assert.equal(metrics.holders.currentHolders,1234);
   assert.equal(metrics.holders.top10Pct,25);
 });
+
+test('score velocity measures improvement in Cycle Potential rather than event count',()=>{
+  const runtime=new CycleRuntime({});
+  const now=Date.parse('2026-09-08T00:00:00Z');
+  const db={cycleScoreHistory:{[ADDRESS]:[
+    {at:'2026-09-04T00:00:00Z',score:40,stage:'EMERGING'},
+    {at:'2026-09-07T00:00:00Z',score:55,stage:'BREAKOUT'},
+    {at:'2026-09-07T18:00:00Z',score:61,stage:'BREAKOUT'},
+    {at:'2026-09-08T00:00:00Z',score:66,stage:'BREAKOUT'}
+  ]}};
+  const v=runtime.scoreVelocity(db,ADDRESS,now);
+  assert.equal(v.delta6h,5);
+  assert.equal(v.delta24h,11);
+  assert.equal(v.delta3d,26);
+  assert.equal(v.direction,'RISING_FAST');
+});
+
+test('current holdings snapshots are cached independently from holder-count snapshots',async()=>{
+  let calls=0;
+  const runtime=new CycleRuntime({holdingsIntervalMs:3600000,holdingsProvider:{snapshot:async()=>{calls++;return{status:'MEASURED',qualifiedHolders:2,provisionalHolders:1,observedAt:new Date().toISOString()};}}});
+  const db={};
+  const first=await runtime.maybeSnapshotMoneyHoldings(db,ADDRESS,[],{force:true});
+  assert.equal(first.qualifiedHolders,2);
+  const second=await runtime.maybeSnapshotMoneyHoldings(db,ADDRESS,[]);
+  assert.equal(second.skipped,true);
+  assert.equal(calls,1);
+});
