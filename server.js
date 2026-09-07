@@ -12,7 +12,10 @@ const {TokenIntelligence}=require('./lib/tokenIntelligence');
 const Performance=require('./lib/performance');
 const TokenIdentity=require('./lib/tokenIdentity');
 const CycleRuntime=require('./lib/cycleRuntime');
+const CycleBoard=require('./lib/cycleBoard');
+const CycleUniverse=require('./lib/cycleUniverse');
 const {HolderSnapshotProvider}=require('./lib/holderSnapshot');
+const {MoneyHoldingsProvider}=require('./lib/moneyHoldings');
 
 const PORT=Number(process.env.PORT||8787);
 const DATABASE_URL=process.env.DATABASE_URL||'';
@@ -34,10 +37,13 @@ const storage=new Storage({filePath:DB_FILE,databaseUrl:DATABASE_URL});
 const scanner=new ChainScanner({rpcUrl:RH_RPC_URL,blockscoutApiKey:BLOCKSCOUT_API_KEY,backfillBlocks:BACKFILL_BLOCKS,maxBlockRange:MAX_BLOCK_RANGE,alchemyBackfillBlocks:ALCHEMY_BACKFILL_BLOCKS,alchemyBackfillMaxPages:ALCHEMY_BACKFILL_MAX_PAGES});
 const intelligence=new TokenIntelligence({rpc:scanner.rpc.bind(scanner),targetsUsd:EXIT_TARGETS_USD,primaryTargetUsd:EXIT_PRIMARY_TARGET_USD});
 const holderProvider=new HolderSnapshotProvider();
-const cycleRuntime=new CycleRuntime({holderProvider,snapshotIntervalMs:60*60*1000});
+const holdingsProvider=new MoneyHoldingsProvider({rpc:scanner.rpc.bind(scanner),concurrency:5});
+const cycleRuntime=new CycleRuntime({holderProvider,holdingsProvider,snapshotIntervalMs:60*60*1000,holdingsIntervalMs:2*60*60*1000});
 let db;
 let syncRunning=false;
+let cycleRefreshRunning=false;
 let liveSubscriber=null;
+let cycleTimer=null;
 let liveQueue=Promise.resolve();
 
 function alchemyWebhookConfigured(){return !!ALCHEMY_WEBHOOK_ID&&!!ALCHEMY_WEBHOOK_SIGNING_KEY;}
@@ -88,7 +94,7 @@ function mergeSeedActors(existing=[]){
   return[...merged,...remaining.values()];
 }
 
-function initial(){const now=new Date().toISOString();return{version:9,createdAt:now,updatedAt:now,actors:seedActors,events:[],tokenState:{},marketHistory:{},holderHistory:{},holderSnapshotStatus:{},alerts:[],sync:{lastChainSync:null,lastScannedBlock:null,lastError:null,lastScan:null,alchemyBackfill:null,ws:null,lastLiveTx:null,provider:currentProvider()}}}
+function initial(){const now=new Date().toISOString();return{version:10,createdAt:now,updatedAt:now,actors:seedActors,events:[],tokenState:{},marketHistory:{},holderHistory:{},holderSnapshotStatus:{},moneyHoldingsStatus:{},cycleScoreHistory:{},alerts:[],sync:{lastChainSync:null,lastScannedBlock:null,lastError:null,lastScan:null,alchemyBackfill:null,cycle:null,ws:null,lastLiveTx:null,provider:currentProvider()}}}
 const save=()=>storage.save(db);
 const json=(res,status,body)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});res.end(JSON.stringify(body))};
 const auth=(req,token)=>!!token&&req.headers.authorization===`Bearer ${token}`;
@@ -99,12 +105,13 @@ function actorMap(){const out={};for(const a of db.actors){a.adaptiveScore=Engin
 function moneyWalletMap(){return new Map(db.actors.filter(a=>a.kind==='money'&&a.enabled!==false&&/^0x[a-fA-F0-9]{40}$/.test(a.evmAddress||'')).map(a=>[a.evmAddress.toLowerCase(),a]));}
 function calibration(){return Performance.calibrationReport(Object.values(actorMap()),db.events,db.marketHistory||{});}
 function signals(){const actors=actorMap(),groups=new Map(),cut=Date.now()-24*3600e3;for(const e of db.events){if(new Date(e.at).getTime()<cut)continue;(groups.get(e.tokenAddress)||groups.set(e.tokenAddress,[]).get(e.tokenAddress)).push(e)}const out=[];for(const[address,events]of groups){const st=db.tokenState[address]||{};const latest=[...events].sort((a,b)=>new Date(b.at)-new Date(a.at))[0];const cycleMetrics=cycleRuntime.metrics(db,address);let result=Engine.evaluateToken({events,actors,safety:st.safety||{},execution:{...(st.execution||{}),currentMarketCap:st.marketCap||latest.marketCap||null},token:{marketCap:st.marketCap||latest.marketCap||null},cycleMetrics});const socialOnly=events.every(e=>e.action==='SCOUT');if(socialOnly&&st.contractExists===false)result={...result,state:'IGNORE',reason:'not_robinhood_contract'};const ticker=st.tokenSymbol||latest.symbol||null;const name=st.tokenName||null;out.push({tokenAddress:address,name,ticker,symbol:TokenIdentity.displayLabel(name,ticker,address),contractExists:st.contractExists??null,lastSeen:latest.at,events,...result,liquidityUsd:st.execution?.liquidityUsd||null,priceUsd:st.priceUsd||null,exitabilityTargetUsd:st.execution?.exitabilityTargetUsd||null,sellImpactPct:st.execution?.sellImpactPct??null,exitQuotes:st.execution?.exitQuotes||[],safetyEvidence:st.safetyEvidence||null,cycleDataStatus:cycleMetrics})}return out.sort((a,b)=>b.score-a.score)}
-function dashboard(){const actors=Object.values(actorMap()),ss=signals(),cal=calibration();return{generatedAt:new Date().toISOString(),summary:{actors:actors.length,money:actors.filter(a=>a.kind==='money').length,social:actors.filter(a=>a.kind==='social').length,resolved:actors.filter(a=>a.evmAddress).length,entryCandidates:ss.filter(s=>['ENTRY_CANDIDATE','HIGH_CONFLUENCE'].includes(s.state)).length,distribution:ss.filter(s=>s.state==='DISTRIBUTION').length},signals:ss,recentEvents:db.events.slice(0,100),actors:actors.sort((a,b)=>b.adaptiveScore-a.adaptiveScore),calibration:cal,sync:db.sync}}
+function cycleMemes({recordScores=false,now=Date.now(),tacticalSignals=null}={}){const actors=actorMap(),ss=tacticalSignals||signals();return CycleBoard.buildCycleBoard({db,actors,cycleRuntime,tacticalSignals:ss,now,recordScores});}
+function dashboard(){const actors=Object.values(actorMap()),ss=signals(),cycles=cycleMemes({tacticalSignals:ss}),cal=calibration();return{generatedAt:new Date().toISOString(),summary:{actors:actors.length,money:actors.filter(a=>a.kind==='money').length,social:actors.filter(a=>a.kind==='social').length,resolved:actors.filter(a=>a.evmAddress).length,entryCandidates:ss.filter(s=>['ENTRY_CANDIDATE','HIGH_CONFLUENCE'].includes(s.state)).length,distribution:ss.filter(s=>s.state==='DISTRIBUTION').length,cycleCandidates:cycles.length,cyclePinned:cycles.filter(c=>c.cyclePinned).length},signals:ss,cycleMemes:cycles,recentEvents:db.events.slice(0,100),actors:actors.sort((a,b)=>b.adaptiveScore-a.adaptiveScore),calibration:cal,sync:db.sync}}
 
 function recordMarketSnapshot(address,state){
   if(!(Number(state?.priceUsd)>0))return;
   const observedAt=state.observedAt||new Date().toISOString();
-  const snapshot={at:observedAt,priceUsd:Number(state.priceUsd),marketCap:state.marketCap??null,liquidityUsd:state.execution?.liquidityUsd??null};
+  const snapshot={at:observedAt,priceUsd:Number(state.priceUsd),marketCap:state.marketCap??null,liquidityUsd:state.execution?.liquidityUsd??null,volume24h:state.execution?.volume24h??null,buys24h:state.execution?.buys24h??null,sells24h:state.execution?.sells24h??null};
   db.marketHistory=db.marketHistory||{};
   const history=db.marketHistory[address]||[];
   const last=history.at(-1);
@@ -155,7 +162,7 @@ async function buildTokenState(token,force=false){
   ]);
   const marketState=m?{
     marketCap:m.marketCap,priceUsd:m.priceUsd,priceNative:m.priceNative,fdv:m.fdv,
-    execution:{liquidityUsd:m.liquidityUsd,pairAddress:m.pairAddress,dexId:m.dexId,quoteTokenAddress:m.quoteTokenAddress,marketSource:m.marketSource}
+    execution:{liquidityUsd:m.liquidityUsd,pairAddress:m.pairAddress,dexId:m.dexId,quoteTokenAddress:m.quoteTokenAddress,marketSource:m.marketSource,volume24h:m.volume24h??null,buys24h:m.buys24h??null,sells24h:m.sells24h??null}
   }:{};
   const intel=await intelligence.inspect(token,m||{},{force});
   const state={...marketState,...intel,tokenName:identity.name,tokenSymbol:identity.symbol,contractExists:identity.contractExists,observedAt:new Date().toISOString(),execution:{...(marketState.execution||{}),...(intel.execution||{})}};
@@ -165,9 +172,7 @@ async function buildTokenState(token,force=false){
 
 async function enrichTokens(tokens){
   const tokenStates={};
-  for(const token of [...new Set(tokens||[])]){
-    tokenStates[token]=await buildTokenState(token,true);
-  }
+  for(const token of [...new Set(tokens||[])])tokenStates[token]=await buildTokenState(token,true);
   for(const [address,state] of Object.entries(tokenStates))mergeTokenState(address,state);
   save();await storage.flush();
 }
@@ -175,6 +180,41 @@ function queueTokenEnrichment(tokens){
   if(!tokens?.length)return;
   liveQueue=liveQueue.then(()=>enrichTokens(tokens)).catch(e=>{db.sync={...(db.sync||{}),lastError:e.message};save();console.error(`[market] ${e.message}`);});
 }
+
+async function refreshCycleCoverage({force=false,limit=12}={}){
+  if(cycleRefreshRunning)return{ok:true,skipped:true,reason:'cycle_refresh_running'};
+  cycleRefreshRunning=true;
+  try{
+    const now=Date.now();
+    const initialBoard=cycleMemes({now});
+    const seedAddresses=CycleUniverse.CYCLE_SEEDS.map(x=>x.tokenAddress.toLowerCase());
+    const addresses=[...new Set([...seedAddresses,...initialBoard.map(x=>x.tokenAddress)])].slice(0,Math.max(2,limit));
+    let enriched=0,holdingsChecked=0;
+    for(const address of addresses){
+      let state=db.tokenState[address]||{};
+      const observed=Date.parse(state.observedAt||'');
+      const stale=!Number.isFinite(observed)||now-observed>60*60*1000;
+      if(force||stale||state.contractExists!==true){
+        state=await buildTokenState(address,true);
+        mergeTokenState(address,state);enriched++;
+      }
+      if(state.contractExists===true){
+        const h=await cycleRuntime.maybeSnapshotMoneyHoldings(db,address,db.actors,{force});
+        if(!h.skipped)holdingsChecked++;
+      }
+    }
+    const tactical=signals();
+    const board=cycleMemes({recordScores:true,now,tacticalSignals:tactical});
+    db.sync={...(db.sync||{}),cycle:{version:3,lastRefreshAt:new Date(now).toISOString(),candidates:board.length,trackedContracts:addresses.length,enriched,holdingsChecked,pinned:board.filter(x=>x.cyclePinned).length}};
+    save();await storage.flush();
+    console.log(`[cycle] v3 refresh -> ${board.length} candidates / ${addresses.length} tracked / ${holdingsChecked} holdings checks`);
+    return{ok:true,...db.sync.cycle};
+  }catch(error){
+    db.sync={...(db.sync||{}),cycle:{...(db.sync?.cycle||{}),version:3,lastRefreshAt:new Date().toISOString(),error:error.message}};
+    save();throw error;
+  }finally{cycleRefreshRunning=false;}
+}
+function queueCycleRefresh(){setTimeout(()=>refreshCycleCoverage().catch(e=>console.error(`[cycle] ${e.message}`)),0);}
 
 async function runAlchemyHistoricalBackfill(){
   const previous=db.sync?.alchemyBackfill||{};
@@ -209,12 +249,10 @@ async function runAlchemyHistoricalBackfill(){
 async function ingestLiveTx(txHash){
   const rows=await scanner.analyzeTx(txHash,moneyWalletMap());
   const tokenStates={};
-  for(const token of [...new Set(rows.map(e=>e.tokenAddress))]){
-    tokenStates[token]=await buildTokenState(token,true);
-  }
+  for(const token of [...new Set(rows.map(e=>e.tokenAddress))])tokenStates[token]=await buildTokenState(token,true);
   const fresh=await storeEvents(rows,tokenStates);
   db.sync={...(db.sync||{}),lastChainSync:new Date().toISOString(),lastLiveTx:txHash,lastError:null,lastLiveEvents:fresh.length};
-  save();await storage.flush();
+  save();await storage.flush();queueCycleRefresh();
   console.log(`[live] ${txHash} -> ${fresh.length} radar event(s)`);
   return fresh;
 }
@@ -233,7 +271,7 @@ async function ingestAlchemyWebhook(payload){
     lastScan:{...(db.sync?.lastScan||{}),trackedWallets:wallets.size,discovery:'alchemy-webhook',providerReady:true,newEvents:fresh.length}
   };
   save();await storage.flush();
-  queueTokenEnrichment(rows.map(e=>e.tokenAddress));
+  queueTokenEnrichment(rows.map(e=>e.tokenAddress));queueCycleRefresh();
   console.log(`[alchemy] ${payload?.id||'event'} -> ${fresh.length}/${rows.length} new radar event(s)`);
   return{rows,fresh};
 }
@@ -248,13 +286,14 @@ async function runLiveSync(){
       const nowMs=Date.now(),staleBefore=nowMs-5*60*1000;
       const entries=[...new Set(db.events.filter(e=>Performance.ENTRY_ACTIONS.has(e.action)&&new Date(e.at).getTime()>nowMs-7*24*3600e3).map(e=>e.tokenAddress))];
       const observations=[...new Set(db.events.filter(e=>new Date(e.at).getTime()>nowMs-24*3600e3).map(e=>e.tokenAddress))];
-      const due=[...new Set([...entries,...observations])]
-        .filter(token=>{const at=Date.parse(db.tokenState[token]?.observedAt||'');return!Number.isFinite(at)||at<staleBefore}).slice(0,8);
+      const cycleSeeds=CycleUniverse.CYCLE_SEEDS.map(x=>x.tokenAddress.toLowerCase());
+      const due=[...new Set([...cycleSeeds,...entries,...observations])]
+        .filter(token=>{const at=Date.parse(db.tokenState[token]?.observedAt||'');return!Number.isFinite(at)||at<staleBefore}).slice(0,10);
       let enrichedTokens=0;
       for(const token of due){mergeTokenState(token,await buildTokenState(token,true));enrichedTokens++;}
       const lastScan={fromBlock:db.sync?.lastScannedBlock??null,toBlock:db.sync?.lastScannedBlock??null,transactions:0,transferRecords:0,pages:0,newEvents:0,enrichedTokens,backfillStatus:backfill?.status||null,backfillNewEvents:backfill?.skipped?0:(backfill?.newEvents||0),trackedWallets:moneyWalletMap().size,discovery:'alchemy-webhook',providerReady:true,creditsRemaining:null,rateRemaining:null};
       db.sync={...(db.sync||{}),lastChainSync:now,lastError:null,chainId:4663,provider:'alchemy-webhook',lastScan};
-      save();await storage.flush();
+      save();await storage.flush();queueCycleRefresh();
       return{ok:true,...lastScan,lastChainSync:now};
     }
     const existingKeys=new Set(db.events.map(e=>e.key).filter(Boolean));
@@ -263,7 +302,7 @@ async function runLiveSync(){
     for(const token of [...new Set((result.events||[]).map(e=>e.tokenAddress))])result.tokenStates[token]=await buildTokenState(token,true);
     const fresh=await storeEvents(result.events||[],result.tokenStates||{});
     db.sync={...(db.sync||{}),lastChainSync:new Date().toISOString(),lastScannedBlock:result.toBlock??db.sync?.lastScannedBlock??null,lastError:null,chainId:4663,provider:result.discovery,lastScan:{fromBlock:result.fromBlock,toBlock:result.toBlock,transactions:result.transactions||0,transferRecords:result.transferRecords||0,pages:result.pages||0,newEvents:fresh.length,trackedWallets:result.trackedWallets||0,discovery:result.discovery,providerReady:result.providerReady!==false,creditsRemaining:result.creditsRemaining??null,rateRemaining:result.rateRemaining??null}};
-    save();await storage.flush();
+    save();await storage.flush();queueCycleRefresh();
     return{ok:true,...db.sync.lastScan,lastChainSync:db.sync.lastChainSync};
   }catch(e){
     db.sync={...(db.sync||{}),lastChainSync:new Date().toISOString(),lastError:e.message,lastScan:{failed:true},provider:alchemyWebhookConfigured()?'alchemy-webhook':scanner.hasPro()?'blockscout-pro-error':'awaiting-provider-credentials'};
@@ -280,8 +319,9 @@ function startLiveSubscriber(){
 }
 
 const server=http.createServer(async(req,res)=>{const u=new URL(req.url,`http://${req.headers.host||'localhost'}`),p=u.pathname;try{
-if(p==='/api/health')return json(res,200,{ok:true,version:9,cycleVersion:2,storage:DATABASE_URL?'postgres':'file',chainId:4663,provider:currentProvider(),webhook:alchemyWebhookConfigured()?'configured':'disabled',backfill:db?.sync?.alchemyBackfill?.status||'pending',calibration:calibration().status,ws:db?.sync?.ws?.state||'disabled',time:new Date().toISOString()});
+if(p==='/api/health')return json(res,200,{ok:true,version:10,cycleVersion:3,storage:DATABASE_URL?'postgres':'file',chainId:4663,provider:currentProvider(),webhook:alchemyWebhookConfigured()?'configured':'disabled',backfill:db?.sync?.alchemyBackfill?.status||'pending',cycleLastRefresh:db?.sync?.cycle?.lastRefreshAt||null,calibration:calibration().status,ws:db?.sync?.ws?.state||'disabled',time:new Date().toISOString()});
 if(p==='/api/dashboard'&&req.method==='GET')return json(res,200,dashboard());
+if(p==='/api/cycle'&&req.method==='GET')return json(res,200,{generatedAt:new Date().toISOString(),version:3,cycleMemes:cycleMemes(),sync:db.sync?.cycle||null});
 if(p==='/api/calibration'&&req.method==='GET')return json(res,200,calibration());
 if(p==='/api/webhooks/alchemy'&&req.method==='POST'){
   if(!alchemyWebhookConfigured())return json(res,503,{error:'alchemy webhook not configured'});
@@ -294,11 +334,11 @@ if(p==='/api/webhooks/alchemy'&&req.method==='POST'){
   return json(res,200,{ok:true,received:result.rows.length,newEvents:result.fresh.length});
 }
 if(p==='/api/internal/sync'&&req.method==='POST'){if(!auth(req,INTERNAL_SYNC_TOKEN))return json(res,401,{error:'unauthorized'});return json(res,200,await runLiveSync());}
-if(p==='/api/events'&&req.method==='POST'){if(!auth(req,WRITE_API_TOKEN))return json(res,401,{error:'unauthorized'});const b=await body(req);if(!b.actorId||!b.action||!/^0x[a-fA-F0-9]{40}$/.test(b.tokenAddress||''))return json(res,400,{error:'actorId, action and exact tokenAddress required'});if(!db.actors.some(a=>a.id===b.actorId))return json(res,404,{error:'actor not found'});const e={key:b.key||`${Date.now()}:${b.actorId}:${b.tokenAddress}`,actorId:b.actorId,action:String(b.action).toUpperCase(),tokenAddress:b.tokenAddress.toLowerCase(),symbol:b.symbol||null,marketCap:b.marketCap??null,blockNumber:b.blockNumber??null,blockHash:b.blockHash??null,at:b.at||new Date().toISOString(),signalRole:b.signalRole||null,source:b.source||'external'};db.events.unshift(e);save();return json(res,201,{ok:true})}
-if(p==='/api/token-state'&&req.method==='POST'){if(!auth(req,WRITE_API_TOKEN))return json(res,401,{error:'unauthorized'});const b=await body(req);if(!/^0x[a-fA-F0-9]{40}$/.test(b.tokenAddress||''))return json(res,400,{error:'exact tokenAddress required'});mergeTokenState(b.tokenAddress.toLowerCase(),b.state||{});save();return json(res,200,{ok:true})}
-if(p==='/api/actors/performance'&&req.method==='POST'){if(!auth(req,WRITE_API_TOKEN))return json(res,401,{error:'unauthorized'});const b=await body(req),a=db.actors.find(x=>x.id===b.actorId);if(!a)return json(res,404,{error:'actor not found'});for(const k of ['sampleSize','recentEdge','lifetimeEdge','copyability'])if(b[k]!=null)a[k]=Number(b[k]);if(b.roleScores)a.roleScores={...(a.roleScores||{}),...b.roleScores};save();return json(res,200,{ok:true})}
+if(p==='/api/events'&&req.method==='POST'){if(!auth(req,WRITE_API_TOKEN))return json(res,401,{error:'unauthorized'});const b=await body(req);if(!b.actorId||!b.action||!/^0x[a-fA-F0-9]{40}$/.test(b.tokenAddress||''))return json(res,400,{error:'actorId, action and exact tokenAddress required'});if(!db.actors.some(a=>a.id===b.actorId))return json(res,404,{error:'actor not found'});const e={key:b.key||`${Date.now()}:${b.actorId}:${b.tokenAddress}`,actorId:b.actorId,action:String(b.action).toUpperCase(),tokenAddress:b.tokenAddress.toLowerCase(),symbol:b.symbol||null,marketCap:b.marketCap??null,blockNumber:b.blockNumber??null,blockHash:b.blockHash??null,at:b.at||new Date().toISOString(),signalRole:b.signalRole||null,source:b.source||'external'};db.events.unshift(e);save();queueCycleRefresh();return json(res,201,{ok:true})}
+if(p==='/api/token-state'&&req.method==='POST'){if(!auth(req,WRITE_API_TOKEN))return json(res,401,{error:'unauthorized'});const b=await body(req);if(!/^0x[a-fA-F0-9]{40}$/.test(b.tokenAddress||''))return json(res,400,{error:'exact tokenAddress required'});mergeTokenState(b.tokenAddress.toLowerCase(),b.state||{});save();queueCycleRefresh();return json(res,200,{ok:true})}
+if(p==='/api/actors/performance'&&req.method==='POST'){if(!auth(req,WRITE_API_TOKEN))return json(res,401,{error:'unauthorized'});const b=await body(req),a=db.actors.find(x=>x.id===b.actorId);if(!a)return json(res,404,{error:'actor not found'});for(const k of ['sampleSize','recentEdge','lifetimeEdge','copyability'])if(b[k]!=null)a[k]=Number(b[k]);if(b.roleScores)a.roleScores={...(a.roleScores||{}),...b.roleScores};save();queueCycleRefresh();return json(res,200,{ok:true})}
 if(staticFile(res,p))return;return json(res,404,{error:'not found'});
 }catch(e){if(db?.sync){db.sync.lastError=e.message;save();}return json(res,500,{error:e.message})}});
 
-(async()=>{db=await storage.init(initial(),x=>{const fresh={...initial(),...x,version:9};fresh.sync={...initial().sync,...(x?.sync||{})};fresh.tokenState=x?.tokenState||{};fresh.marketHistory=x?.marketHistory||{};fresh.holderHistory=x?.holderHistory||{};fresh.holderSnapshotStatus=x?.holderSnapshotStatus||{};fresh.events=x?.events||[];fresh.actors=mergeSeedActors(x?.actors||[]);return fresh});save();server.listen(PORT,()=>{console.log(`Trenches Radar listening on ${PORT} (${DATABASE_URL?'postgres':'file'})`);startLiveSubscriber();})})().catch(e=>{console.error(e);process.exit(1)});
-process.on('SIGTERM',async()=>{try{liveSubscriber?.stop();}catch{}await storage.close();process.exit(0)});
+(async()=>{db=await storage.init(initial(),x=>{const fresh={...initial(),...x,version:10};fresh.sync={...initial().sync,...(x?.sync||{})};fresh.tokenState=x?.tokenState||{};fresh.marketHistory=x?.marketHistory||{};fresh.holderHistory=x?.holderHistory||{};fresh.holderSnapshotStatus=x?.holderSnapshotStatus||{};fresh.moneyHoldingsStatus=x?.moneyHoldingsStatus||{};fresh.cycleScoreHistory=x?.cycleScoreHistory||{};fresh.events=x?.events||[];fresh.actors=mergeSeedActors(x?.actors||[]);return fresh});save();server.listen(PORT,()=>{console.log(`Trenches Radar listening on ${PORT} (${DATABASE_URL?'postgres':'file'})`);startLiveSubscriber();setTimeout(()=>refreshCycleCoverage({force:true}).catch(e=>console.error(`[cycle] startup ${e.message}`)),1500);cycleTimer=setInterval(()=>refreshCycleCoverage().catch(e=>console.error(`[cycle] timer ${e.message}`)),30*60*1000);cycleTimer.unref?.();})})().catch(e=>{console.error(e);process.exit(1)});
+process.on('SIGTERM',async()=>{try{liveSubscriber?.stop();}catch{}if(cycleTimer)clearInterval(cycleTimer);await storage.close();process.exit(0)});
