@@ -2,7 +2,7 @@
 
 (()=>{
   const $=selector=>document.querySelector(selector);
-  const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]));
+  const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'}[char]));
   const stageLabel=value=>({DISCOVERED:'Descubierto',EMERGING:'Emergente',BREAKOUT:'Breakout',CULTURAL_CONTENDER:'Candidato cultural',CHAIN_ICON:'Icono de la chain',CYCLE_MEME:'Meme del ciclo'}[value]||value||'Descubierto');
   const stageIcon=value=>({DISCOVERED:'🌱',EMERGING:'👀',BREAKOUT:'🔥',CULTURAL_CONTENDER:'🎭',CHAIN_ICON:'👑',CYCLE_MEME:'🌍'}[value]||'🌱');
   const entryLabel=value=>({ENTRY_CANDIDATE:'REVISAR ENTRADA',HIGH_CONFLUENCE:'ALTA CONFLUENCIA',DO_NOT_CHASE:'NO PERSEGUIR',DISTRIBUTION:'SALIDA / DISTRIBUCIÓN',BLOCKED:'NO ENTRAR',WATCH:'VIGILAR',IGNORE:'SIN SEÑAL DE ENTRADA',NO_RECENT_SIGNAL:'SIN SEÑAL TÁCTICA RECIENTE'}[value]||value||'SIN SEÑAL TÁCTICA RECIENTE');
@@ -26,11 +26,14 @@
     .replace('exitability failed','salida fallida')
     .replace('price is outrunning holder absorption','el precio corre más rápido que la adopción de holders')
     .replace('holder growth/distribution is weakening','holders/distribución debilitándose')
+    .replace('material drawdown resilience has not been tested','todavía no ha demostrado supervivencia a un drawdown material')
     .replace('post-drawdown resilience is still being tested','resiliencia post-crash todavía en prueba')
-    .replace('post-drawdown structure remains weak','estructura post-crash débil');
+    .replace('post-drawdown structure remains weak','estructura post-crash débil')
+    .replace('Cycle score still has low evidence coverage','cobertura de evidencia todavía baja');
   const toneForEntry=value=>value==='DISTRIBUTION'||value==='BLOCKED'?'negative':value==='HIGH_CONFLUENCE'||value==='ENTRY_CANDIDATE'?'positive':value==='DO_NOT_CHASE'?'warning':'neutral';
   const fmt=value=>Number.isFinite(Number(value))?Number(value).toLocaleString('es-ES',{maximumFractionDigits:1}):'—';
   const delta=value=>Number.isFinite(Number(value))?`${Number(value)>=0?'+':''}${Number(value).toFixed(1)}`:'—';
+  const pct=value=>Number.isFinite(Number(value))?`${Math.round(Number(value)*100)}%`:'—';
 
   function componentChips(components={}){
     const keys=['culture','holders','money','resilience','market'];
@@ -65,15 +68,15 @@
       </div>
       <div class="cycle-components">${componentChips(signal.cycleComponents)}</div>
       <div class="cycle-evidence-line">
+        <span>Cobertura <b>${esc(pct(signal.cycleCoverage))}</b></span>
+        <span>Confianza <b>${esc(pct(signal.cycleConfidence))}</b></span>
         <span>Holders <b>${esc(fmt(evidence.currentHolders))}</b></span>
         <span>Money hold <b>${esc(evidence.currentQualifiedMoneyHolders??0)}</b></span>
-        <span>Money ciclo <b>${esc(evidence.moneyActors??0)}</b></span>
-        <span>Scouts <b>${esc(evidence.socialScouts??0)}</b></span>
       </div>
       <div class="cycle-evidence-line">
-        <span>Δ score 6h <b>${esc(delta(signal.cycleDelta6h))}</b></span>
-        <span>24h <b>${esc(delta(signal.cycleDelta24h))}</b></span>
-        <span>3d <b>${esc(delta(signal.cycleDelta3d))}</b></span>
+        <span>Money ciclo <b>${esc(evidence.moneyActors??0)}</b></span>
+        <span>Scouts <b>${esc(evidence.socialScouts??0)}</b></span>
+        <span>Δ score 24h <b>${esc(delta(signal.cycleDelta24h))}</b></span>
         <span>Top10 <b>${evidence.top10Pct==null?'—':esc(fmt(evidence.top10Pct))+'%'}</b></span>
       </div>
       <div class="cycle-thesis">
@@ -82,8 +85,8 @@
       </div>
       ${analogueLine(signal.cycleAnalogues||[])}
       <details class="technical cycle-tech"><summary>Ver evidencia completa</summary>
-        <p>Cycle Potential ${esc(Math.round(Number(signal.cyclePotential||0)))}/100 · motor V${esc(signal.cycleVersion||3)}. Entry Score sigue siendo independiente.</p>
-        <p>Cultura ${esc(signal.cycleComponents?.culture??0)} · Holders ${esc(signal.cycleComponents?.holders??'—')} · Money ${esc(signal.cycleComponents?.money??0)} · Resiliencia ${esc(signal.cycleComponents?.resilience??'—')} · Mercado ${esc(signal.cycleComponents?.market??0)} · Atención ${esc(signal.cycleComponents?.velocity??0)} · Absorción ${esc(signal.cycleComponents?.organic??'—')}.</p>
+        <p>Cycle Potential ${esc(Math.round(Number(signal.cyclePotential||0)))}/100 · potencial bruto ${esc(signal.cycleRawPotential??'—')} · cobertura ${esc(pct(signal.cycleCoverage))} · confianza ${esc(pct(signal.cycleConfidence))} · motor V${esc(signal.cycleVersion||4)}. Entry Score sigue siendo independiente.</p>
+        <p>Cultura ${esc(signal.cycleComponents?.culture??0)} · Holders ${esc(signal.cycleComponents?.holders??'—')} · Money ${esc(signal.cycleComponents?.money??'—')} · Resiliencia ${esc(signal.cycleComponents?.resilience??'—')} · Mercado ${esc(signal.cycleComponents?.market??'—')} · Atención ${esc(signal.cycleComponents?.velocity??0)} · Absorción ${esc(signal.cycleComponents?.organic??'—')}.</p>
         <p>Holder 24h ${esc(evidence.holderGrowth24h??'—')}% · 3d ${esc(evidence.holderGrowth3d??'—')}% · 7d ${esc(evidence.holderGrowth7d??'—')}% · Drawdown máx. observado ${esc(evidence.maxDrawdownPct??'—')}% · recuperación del peak ${esc(evidence.peakRecoveryPct??'—')}%.</p>
         ${missing.length?`<p>Datos todavía insuficientes: ${esc(missing.join(' + '))}.</p>`:''}
         <p><code>${esc(signal.tokenAddress||'')}</code></p>
@@ -96,7 +99,7 @@
   }
 
   function render(data){
-    const signals=(data.cycleMemes||[]).filter(signal=>Number.isFinite(Number(signal.cyclePotential))).sort((a,b)=>Number(b.cyclePotential||0)-Number(a.cyclePotential||0));
+    const signals=(data.cycleMemes||[]).filter(signal=>Number.isFinite(Number(signal.cyclePotential))).sort((a,b)=>Number(b.cyclePotential||0)-Number(a.cyclePotential||0)||Number(b.cycleConfidence||0)-Number(a.cycleConfidence||0));
     const ranked=signals.slice(0,10);
     const rankedAddresses=new Set(ranked.map(x=>x.tokenAddress));
     const pinnedOutside=signals.filter(x=>x.cyclePinned&&!rankedAddresses.has(x.tokenAddress));
@@ -107,7 +110,7 @@
       .slice(0,5);
     const count=$('#cycleCount'),grid=$('#cycleMemes'),risingBox=$('#cycleRising'),risingWrap=$('#cycleRisingWrap');
     if(count)count.textContent=signals.length;
-    if(grid)grid.innerHTML=visible.length?visible.map((signal,i)=>card(signal,rankedAddresses.has(signal.tokenAddress)?`#${signals.findIndex(x=>x.tokenAddress===signal.tokenAddress)+1}`:'★')).join(''):
+    if(grid)grid.innerHTML=visible.length?visible.map(signal=>card(signal,rankedAddresses.has(signal.tokenAddress)?`#${signals.findIndex(x=>x.tokenAddress===signal.tokenAddress)+1}`:'★')).join(''):
       '<div class="empty cycle-empty"><b>Aún no hay candidatos calificables</b><span>El Cycle Radar conserva candidatos por contrato y acumula evidencia aunque no exista una entrada reciente.</span></div>';
     if(risingWrap)risingWrap.hidden=!rising.length;
     if(risingBox)risingBox.innerHTML=rising.map(risingRow).join('');
