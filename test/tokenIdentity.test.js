@@ -50,6 +50,24 @@ test('falls back to exact Robinhood Dex metadata when contract metadata calls fa
   assert.deepEqual(result,{contractExists:true,name:'Optimus',symbol:'OPTIMUS'});
 });
 
+test('bytecode alone is not enough to classify an address as a Robinhood token',async()=>{
+  const rpc=async method=>{
+    if(method==='eth_getCode')return'0x60016000';
+    throw new Error('not ERC20 metadata');
+  };
+  const result=await Identity.resolveTokenIdentity(rpc,ADDRESS,dexResponse([]));
+  assert.deepEqual(result,{contractExists:false,name:null,symbol:null});
+});
+
+test('keeps bytecode-only identity unknown when the exact Dex lookup is temporarily unavailable',async()=>{
+  const rpc=async method=>{
+    if(method==='eth_getCode')return'0x60016000';
+    throw new Error('not ERC20 metadata');
+  };
+  const result=await Identity.resolveTokenIdentity(rpc,ADDRESS,dexUnavailable);
+  assert.deepEqual(result,{contractExists:null,name:null,symbol:null});
+});
+
 test('ignores Dex metadata for a different contract address',async()=>{
   const rpc=async()=>{throw new Error('temporary RPC failure')};
   const fetchImpl=dexResponse([{
