@@ -11,6 +11,8 @@ const AlchemyWebhook=require('./lib/alchemyWebhook');
 const {TokenIntelligence}=require('./lib/tokenIntelligence');
 const Performance=require('./lib/performance');
 const TokenIdentity=require('./lib/tokenIdentity');
+const CycleRuntime=require('./lib/cycleRuntime');
+const {HolderSnapshotProvider}=require('./lib/holderSnapshot');
 
 const PORT=Number(process.env.PORT||8787);
 const DATABASE_URL=process.env.DATABASE_URL||'';
@@ -31,6 +33,8 @@ const ROOT=__dirname, PUBLIC=path.join(ROOT,'public'), DB_FILE=path.join(ROOT,'d
 const storage=new Storage({filePath:DB_FILE,databaseUrl:DATABASE_URL});
 const scanner=new ChainScanner({rpcUrl:RH_RPC_URL,blockscoutApiKey:BLOCKSCOUT_API_KEY,backfillBlocks:BACKFILL_BLOCKS,maxBlockRange:MAX_BLOCK_RANGE,alchemyBackfillBlocks:ALCHEMY_BACKFILL_BLOCKS,alchemyBackfillMaxPages:ALCHEMY_BACKFILL_MAX_PAGES});
 const intelligence=new TokenIntelligence({rpc:scanner.rpc.bind(scanner),targetsUsd:EXIT_TARGETS_USD,primaryTargetUsd:EXIT_PRIMARY_TARGET_USD});
+const holderProvider=new HolderSnapshotProvider();
+const cycleRuntime=new CycleRuntime({holderProvider,snapshotIntervalMs:60*60*1000});
 let db;
 let syncRunning=false;
 let liveSubscriber=null;
@@ -84,7 +88,7 @@ function mergeSeedActors(existing=[]){
   return[...merged,...remaining.values()];
 }
 
-function initial(){const now=new Date().toISOString();return{version:9,createdAt:now,updatedAt:now,actors:seedActors,events:[],tokenState:{},marketHistory:{},alerts:[],sync:{lastChainSync:null,lastScannedBlock:null,lastError:null,lastScan:null,alchemyBackfill:null,ws:null,lastLiveTx:null,provider:currentProvider()}}}
+function initial(){const now=new Date().toISOString();return{version:9,createdAt:now,updatedAt:now,actors:seedActors,events:[],tokenState:{},marketHistory:{},holderHistory:{},holderSnapshotStatus:{},alerts:[],sync:{lastChainSync:null,lastScannedBlock:null,lastError:null,lastScan:null,alchemyBackfill:null,ws:null,lastLiveTx:null,provider:currentProvider()}}}
 const save=()=>storage.save(db);
 const json=(res,status,body)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});res.end(JSON.stringify(body))};
 const auth=(req,token)=>!!token&&req.headers.authorization===`Bearer ${token}`;
@@ -94,7 +98,7 @@ function staticFile(res,p){let rel=p==='/'?'index.html':p.replace(/^\//,'');rel=
 function actorMap(){const out={};for(const a of db.actors){a.adaptiveScore=Engine.adaptiveActorScore(a);a.division=Engine.division(a.sampleSize||a.calls||0,a.kind);out[a.id]=a}return out}
 function moneyWalletMap(){return new Map(db.actors.filter(a=>a.kind==='money'&&a.enabled!==false&&/^0x[a-fA-F0-9]{40}$/.test(a.evmAddress||'')).map(a=>[a.evmAddress.toLowerCase(),a]));}
 function calibration(){return Performance.calibrationReport(Object.values(actorMap()),db.events,db.marketHistory||{});}
-function signals(){const actors=actorMap(),groups=new Map(),cut=Date.now()-24*3600e3;for(const e of db.events){if(new Date(e.at).getTime()<cut)continue;(groups.get(e.tokenAddress)||groups.set(e.tokenAddress,[]).get(e.tokenAddress)).push(e)}const out=[];for(const[address,events]of groups){const st=db.tokenState[address]||{};const latest=[...events].sort((a,b)=>new Date(b.at)-new Date(a.at))[0];let result=Engine.evaluateToken({events,actors,safety:st.safety||{},execution:{...(st.execution||{}),currentMarketCap:st.marketCap||latest.marketCap||null},token:{marketCap:st.marketCap||latest.marketCap||null}});const socialOnly=events.every(e=>e.action==='SCOUT');if(socialOnly&&st.contractExists===false)result={...result,state:'IGNORE',reason:'not_robinhood_contract'};const ticker=st.tokenSymbol||latest.symbol||null;const name=st.tokenName||null;out.push({tokenAddress:address,name,ticker,symbol:TokenIdentity.displayLabel(name,ticker,address),contractExists:st.contractExists??null,lastSeen:latest.at,events,...result,liquidityUsd:st.execution?.liquidityUsd||null,priceUsd:st.priceUsd||null,exitabilityTargetUsd:st.execution?.exitabilityTargetUsd||null,sellImpactPct:st.execution?.sellImpactPct??null,exitQuotes:st.execution?.exitQuotes||[],safetyEvidence:st.safetyEvidence||null})}return out.sort((a,b)=>b.score-a.score)}
+function signals(){const actors=actorMap(),groups=new Map(),cut=Date.now()-24*3600e3;for(const e of db.events){if(new Date(e.at).getTime()<cut)continue;(groups.get(e.tokenAddress)||groups.set(e.tokenAddress,[]).get(e.tokenAddress)).push(e)}const out=[];for(const[address,events]of groups){const st=db.tokenState[address]||{};const latest=[...events].sort((a,b)=>new Date(b.at)-new Date(a.at))[0];const cycleMetrics=cycleRuntime.metrics(db,address);let result=Engine.evaluateToken({events,actors,safety:st.safety||{},execution:{...(st.execution||{}),currentMarketCap:st.marketCap||latest.marketCap||null},token:{marketCap:st.marketCap||latest.marketCap||null},cycleMetrics});const socialOnly=events.every(e=>e.action==='SCOUT');if(socialOnly&&st.contractExists===false)result={...result,state:'IGNORE',reason:'not_robinhood_contract'};const ticker=st.tokenSymbol||latest.symbol||null;const name=st.tokenName||null;out.push({tokenAddress:address,name,ticker,symbol:TokenIdentity.displayLabel(name,ticker,address),contractExists:st.contractExists??null,lastSeen:latest.at,events,...result,liquidityUsd:st.execution?.liquidityUsd||null,priceUsd:st.priceUsd||null,exitabilityTargetUsd:st.execution?.exitabilityTargetUsd||null,sellImpactPct:st.execution?.sellImpactPct??null,exitQuotes:st.execution?.exitQuotes||[],safetyEvidence:st.safetyEvidence||null,cycleDataStatus:cycleMetrics})}return out.sort((a,b)=>b.score-a.score)}
 function dashboard(){const actors=Object.values(actorMap()),ss=signals(),cal=calibration();return{generatedAt:new Date().toISOString(),summary:{actors:actors.length,money:actors.filter(a=>a.kind==='money').length,social:actors.filter(a=>a.kind==='social').length,resolved:actors.filter(a=>a.evmAddress).length,entryCandidates:ss.filter(s=>['ENTRY_CANDIDATE','HIGH_CONFLUENCE'].includes(s.state)).length,distribution:ss.filter(s=>s.state==='DISTRIBUTION').length},signals:ss,recentEvents:db.events.slice(0,100),actors:actors.sort((a,b)=>b.adaptiveScore-a.adaptiveScore),calibration:cal,sync:db.sync}}
 
 function recordMarketSnapshot(address,state){
@@ -154,7 +158,9 @@ async function buildTokenState(token,force=false){
     execution:{liquidityUsd:m.liquidityUsd,pairAddress:m.pairAddress,dexId:m.dexId,quoteTokenAddress:m.quoteTokenAddress,marketSource:m.marketSource}
   }:{};
   const intel=await intelligence.inspect(token,m||{},{force});
-  return{...marketState,...intel,tokenName:identity.name,tokenSymbol:identity.symbol,contractExists:identity.contractExists,observedAt:new Date().toISOString(),execution:{...(marketState.execution||{}),...(intel.execution||{})}};
+  const state={...marketState,...intel,tokenName:identity.name,tokenSymbol:identity.symbol,contractExists:identity.contractExists,observedAt:new Date().toISOString(),execution:{...(marketState.execution||{}),...(intel.execution||{})}};
+  if(state.contractExists===true)await cycleRuntime.maybeSnapshotHolders(db,token,state);
+  return state;
 }
 
 async function enrichTokens(tokens){
@@ -274,7 +280,7 @@ function startLiveSubscriber(){
 }
 
 const server=http.createServer(async(req,res)=>{const u=new URL(req.url,`http://${req.headers.host||'localhost'}`),p=u.pathname;try{
-if(p==='/api/health')return json(res,200,{ok:true,version:9,storage:DATABASE_URL?'postgres':'file',chainId:4663,provider:currentProvider(),webhook:alchemyWebhookConfigured()?'configured':'disabled',backfill:db?.sync?.alchemyBackfill?.status||'pending',calibration:calibration().status,ws:db?.sync?.ws?.state||'disabled',time:new Date().toISOString()});
+if(p==='/api/health')return json(res,200,{ok:true,version:9,cycleVersion:2,storage:DATABASE_URL?'postgres':'file',chainId:4663,provider:currentProvider(),webhook:alchemyWebhookConfigured()?'configured':'disabled',backfill:db?.sync?.alchemyBackfill?.status||'pending',calibration:calibration().status,ws:db?.sync?.ws?.state||'disabled',time:new Date().toISOString()});
 if(p==='/api/dashboard'&&req.method==='GET')return json(res,200,dashboard());
 if(p==='/api/calibration'&&req.method==='GET')return json(res,200,calibration());
 if(p==='/api/webhooks/alchemy'&&req.method==='POST'){
@@ -294,5 +300,5 @@ if(p==='/api/actors/performance'&&req.method==='POST'){if(!auth(req,WRITE_API_TO
 if(staticFile(res,p))return;return json(res,404,{error:'not found'});
 }catch(e){if(db?.sync){db.sync.lastError=e.message;save();}return json(res,500,{error:e.message})}});
 
-(async()=>{db=await storage.init(initial(),x=>{const fresh={...initial(),...x,version:9};fresh.sync={...initial().sync,...(x?.sync||{})};fresh.tokenState=x?.tokenState||{};fresh.marketHistory=x?.marketHistory||{};fresh.events=x?.events||[];fresh.actors=mergeSeedActors(x?.actors||[]);return fresh});save();server.listen(PORT,()=>{console.log(`Trenches Radar listening on ${PORT} (${DATABASE_URL?'postgres':'file'})`);startLiveSubscriber();})})().catch(e=>{console.error(e);process.exit(1)});
+(async()=>{db=await storage.init(initial(),x=>{const fresh={...initial(),...x,version:9};fresh.sync={...initial().sync,...(x?.sync||{})};fresh.tokenState=x?.tokenState||{};fresh.marketHistory=x?.marketHistory||{};fresh.holderHistory=x?.holderHistory||{};fresh.holderSnapshotStatus=x?.holderSnapshotStatus||{};fresh.events=x?.events||[];fresh.actors=mergeSeedActors(x?.actors||[]);return fresh});save();server.listen(PORT,()=>{console.log(`Trenches Radar listening on ${PORT} (${DATABASE_URL?'postgres':'file'})`);startLiveSubscriber();})})().catch(e=>{console.error(e);process.exit(1)});
 process.on('SIGTERM',async()=>{try{liveSubscriber?.stop();}catch{}await storage.close();process.exit(0)});
