@@ -4,6 +4,11 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const Identity=require('../lib/tokenIdentity');
 
+const ADDRESS='0x1111111111111111111111111111111111111111';
+const OTHER='0x2222222222222222222222222222222222222222';
+const dexUnavailable=async()=>({ok:false});
+const dexResponse=rows=>async()=>({ok:true,json:async()=>rows});
+
 function abiString(value){
   const bytes=Buffer.from(value,'utf8').toString('hex');
   const padded=bytes.padEnd(Math.ceil(bytes.length/64)*64,'0');
@@ -28,18 +33,47 @@ test('resolves name and symbol from the exact Robinhood-chain contract',async()=
     if(selector==='0x95d89b41')return abiString('OPTIMUS');
     throw new Error('unexpected call');
   };
-  const result=await Identity.resolveTokenIdentity(rpc,'0x1111111111111111111111111111111111111111');
+  const result=await Identity.resolveTokenIdentity(rpc,ADDRESS,dexUnavailable);
   assert.deepEqual(result,{contractExists:true,name:'Optimus',symbol:'OPTIMUS'});
+});
+
+test('falls back to exact Robinhood Dex metadata when contract metadata calls fail',async()=>{
+  const rpc=async method=>{
+    if(method==='eth_getCode')return'0x60016000';
+    throw new Error('metadata unavailable');
+  };
+  const fetchImpl=dexResponse([{
+    chainId:'robinhood',liquidity:{usd:12345},
+    baseToken:{address:ADDRESS,name:'Optimus',symbol:'OPTIMUS'}
+  }]);
+  const result=await Identity.resolveTokenIdentity(rpc,ADDRESS,fetchImpl);
+  assert.deepEqual(result,{contractExists:true,name:'Optimus',symbol:'OPTIMUS'});
+});
+
+test('ignores Dex metadata for a different contract address',async()=>{
+  const rpc=async()=>{throw new Error('temporary RPC failure')};
+  const fetchImpl=dexResponse([{
+    chainId:'robinhood',liquidity:{usd:99999},
+    baseToken:{address:OTHER,name:'Wrong token',symbol:'WRONG'}
+  }]);
+  const result=await Identity.resolveTokenIdentity(rpc,ADDRESS,fetchImpl);
+  assert.deepEqual(result,{contractExists:false,name:null,symbol:null});
 });
 
 test('marks an address with no Robinhood-chain bytecode as not a contract',async()=>{
   const rpc=async method=>method==='eth_getCode'?'0x':null;
-  const result=await Identity.resolveTokenIdentity(rpc,'0x1111111111111111111111111111111111111111');
+  const result=await Identity.resolveTokenIdentity(rpc,ADDRESS,dexUnavailable);
   assert.deepEqual(result,{contractExists:false,name:null,symbol:null});
 });
 
-test('RPC uncertainty is not misclassified as a missing contract',async()=>{
+test('RPC uncertainty stays unknown when the Dex lookup is also unavailable',async()=>{
   const rpc=async()=>{throw new Error('temporary RPC failure')};
-  const result=await Identity.resolveTokenIdentity(rpc,'0x1111111111111111111111111111111111111111');
+  const result=await Identity.resolveTokenIdentity(rpc,ADDRESS,dexUnavailable);
   assert.deepEqual(result,{contractExists:null,name:null,symbol:null});
+});
+
+test('an empty exact Robinhood Dex lookup rejects an uncertain cross-chain address',async()=>{
+  const rpc=async()=>{throw new Error('temporary RPC failure')};
+  const result=await Identity.resolveTokenIdentity(rpc,ADDRESS,dexResponse([]));
+  assert.deepEqual(result,{contractExists:false,name:null,symbol:null});
 });

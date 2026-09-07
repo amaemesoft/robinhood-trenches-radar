@@ -20,11 +20,12 @@ function cleanTicker(value){
 }
 
 function tokenLabel(name,symbol,fallback){
-  const ticker=cleanTicker(symbol||fallback);
   const cleanName=String(name||'').trim();
-  if(!cleanName)return ticker||'TOKEN';
-  if(!ticker||cleanName.toLowerCase()===ticker.toLowerCase())return cleanName;
-  return `${cleanName} ($${ticker})`;
+  const ticker=cleanTicker(symbol);
+  if(cleanName&&ticker)return `${cleanName} ($${ticker})`;
+  if(cleanName)return cleanName;
+  if(ticker)return `$${ticker}`;
+  return cleanTicker(fallback)||'TOKEN';
 }
 
 async function fetchTokenName(address){
@@ -56,7 +57,7 @@ async function enrichTokenCard(card){
   if(!address||!target)return;
   if(target.dataset.tokenNameAddress===address)return;
   target.dataset.tokenNameAddress=address;
-  const fallback=cleanTicker(target.textContent);
+  const fallback=target.textContent;
   const meta=await fetchTokenName(address);
   if(!meta)return;
   target.textContent=tokenLabel(meta.name,meta.symbol,fallback);
