@@ -11,7 +11,7 @@ const actors={
   m1:{id:'m1',kind:'money',identityConfidence:'verified',adaptiveScore:85},
   m2:{id:'m2',kind:'money',identityConfidence:'strong',adaptiveScore:78},
   p1:{id:'p1',kind:'money',identityConfidence:'attributed',attributionStatus:'provisional',sampleSize:0,adaptiveScore:20},
-  s1:{id:'s1',kind:'social',adaptiveScore:70},s2:{id:'s2',kind:'social',adaptiveScore:68}
+  s1:{id:'s1',kind:'social',adaptiveScore:70},s2:{id:'s2',kind:'social',adaptiveScore:68},s3:{id:'s3',kind:'social',adaptiveScore:66}
 };
 
 test('social discovery can build culture but never smart-money score',()=>{
@@ -81,7 +81,8 @@ test('missing holder and resilience history caps generational stages',()=>{
 test('measured holders plus post-crash resilience can unlock upper-stage gate without tactical semantics',()=>{
   const r=Cycle.evaluateCycleToken({actors,safety,execution:{...execution,exitabilityScore:95},token:{marketCap:35e6},now,events:[
     {actorId:'m1',action:'BUY',at:atDays(20),marketCap:5e6},{actorId:'m2',action:'BUY',at:atDays(16),marketCap:6e6},
-    {actorId:'s1',action:'SCOUT',source:'fxtwitter',at:atDays(4)},{actorId:'s2',action:'SCOUT',source:'telegram',at:atDays(2)}
+    {actorId:'s1',action:'SCOUT',source:'fxtwitter',at:atDays(4)},{actorId:'s2',action:'SCOUT',source:'telegram',at:atDays(2)},
+    {actorId:'s3',action:'SCOUT',source:'x-community',at:atDays(1)}
   ],cycleMetrics:{
     holdings:{status:'MEASURED',coverage:1,qualifiedActorIds:['m1','m2']},
     holders:{status:'MEASURED',score:92,confidence:.85,currentHolders:20000,changes:{'24h':8,'72h':20,'168h':45}},
