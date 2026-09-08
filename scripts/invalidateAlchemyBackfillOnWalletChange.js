@@ -2,6 +2,7 @@
 
 const {Pool}=require('pg');
 
+// Reopen a completed Alchemy backfill whenever the enabled money-wallet universe expands.
 const DATABASE_URL=process.env.DATABASE_URL||'';
 if(!DATABASE_URL)throw new Error('DATABASE_URL is required');
 
