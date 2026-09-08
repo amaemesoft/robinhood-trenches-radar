@@ -15,10 +15,8 @@ const QUOTE_TOKENS=new Set([
 ]);
 const lower=v=>String(v||'').toLowerCase();
 const hexNum=v=>Number.parseInt(v||'0x0',16);
-const topicForAddress=a=>'0x'+'0'.repeat(24)+lower(a).replace(/^0x/,'');
 const wallets=PROVISIONAL_MONEY_WALLETS.filter(w=>w.enabled!==false&&/^0x[a-fA-F0-9]{40}$/.test(w.evmAddress||''));
 const walletMap=new Map(wallets.map(w=>[lower(w.evmAddress),w]));
-const walletTopics=wallets.map(w=>topicForAddress(w.evmAddress));
 let rpcId=1;
 let lastBlock=null;
 let running=false;
@@ -111,10 +109,8 @@ async function analyzeTx(txHash,blockHint,existing){
     const nativeReceived=txTo===wallet&&nativeValue>0n;
     for(const [token,delta] of nonzero){
       if(QUOTE_TOKENS.has(token))continue;
-      const otherOut=nonzero.filter(([other,d])=>other!==token&&d<0n).map(([other])=>other);
-      const otherIn=nonzero.filter(([other,d])=>other!==token&&d>0n).map(([other])=>other);
-      const quoteOut=otherOut.some(other=>QUOTE_TOKENS.has(other));
-      const quoteIn=otherIn.some(other=>QUOTE_TOKENS.has(other));
+      const quoteOut=nonzero.some(([other,d])=>other!==token&&d<0n&&QUOTE_TOKENS.has(other));
+      const quoteIn=nonzero.some(([other,d])=>other!==token&&d>0n&&QUOTE_TOKENS.has(other));
       const action=delta>0n?(quoteOut||nativeSpent?'BUY':'ACQUIRE'):(quoteIn||nativeReceived?'SELL':'TRANSFER_OUT');
       const actor=walletMap.get(wallet);
       const key=`${txHash}:${actor.id}:${token}`;
@@ -131,22 +127,37 @@ async function analyzeTx(txHash,blockHint,existing){
   return posted;
 }
 
-async function queryWalletLogs(fromHex,toHex){
-  const logs=[];
-  // Robinhood's managed/public RPC can reject a large OR-array in topic filters.
-  // Query each wallet independently so coverage is exact and provider-compatible.
-  for(const walletTopic of walletTopics){
-    const [sent,received]=await Promise.all([
-      rpc('eth_getLogs',[{fromBlock:fromHex,toBlock:toHex,topics:[TRANSFER_TOPIC,walletTopic]}]),
-      rpc('eth_getLogs',[{fromBlock:fromHex,toBlock:toHex,topics:[TRANSFER_TOPIC,null,walletTopic]}])
-    ]);
-    logs.push(...(sent||[]),...(received||[]));
+async function discoverOutboundTransactions(fromHex,toHex){
+  const txs=new Map();
+  let transferRecords=0,pages=0;
+  // This is the same provider method already used successfully by the production backfill.
+  // Outbound wallet activity is enough to discover swaps, sells and native-funded buys;
+  // the receipt then classifies the full economic transaction conservatively.
+  for(const actor of wallets){
+    let pageKey=null,page=0;
+    do{
+      const query={
+        fromBlock:fromHex,toBlock:toHex,
+        category:['external','erc20'],excludeZeroValue:true,maxCount:'0x3e8',order:'asc',
+        fromAddress:lower(actor.evmAddress)
+      };
+      if(pageKey)query.pageKey=pageKey;
+      const result=await rpc('alchemy_getAssetTransfers',[query]);
+      pages++;page++;
+      for(const item of Array.isArray(result?.transfers)?result.transfers:[]){
+        if(!item?.hash)continue;
+        txs.set(item.hash,item.blockNum||null);
+        transferRecords++;
+      }
+      pageKey=result?.pageKey||null;
+      if(page>=3)pageKey=null;
+    }while(pageKey);
   }
-  return logs;
+  return{txs,transferRecords,pages};
 }
 
 async function tick(){
-  if(running||!WRITE_API_TOKEN||!walletTopics.length)return;
+  if(running||!WRITE_API_TOKEN||!wallets.length)return;
   running=true;
   try{
     const latest=hexNum(await rpc('eth_blockNumber'));
@@ -155,15 +166,13 @@ async function tick(){
     if(from>latest)return;
     const to=Math.min(latest,from+MAX_BLOCK_RANGE-1);
     const fromHex='0x'+from.toString(16),toHex='0x'+to.toString(16);
-    const [logs,existing]=await Promise.all([queryWalletLogs(fromHex,toHex),recentKeys()]);
-    const txs=new Map();
-    for(const log of logs)if(log?.transactionHash)txs.set(log.transactionHash,log.blockNumber||null);
+    const [discovery,existing]=await Promise.all([discoverOutboundTransactions(fromHex,toHex),recentKeys()]);
     let events=0,failed=0;
-    for(const [hash,blockHint] of txs){
+    for(const [hash,blockHint] of discovery.txs){
       try{events+=await analyzeTx(hash,blockHint,existing)}catch(error){failed++;console.warn(`[smart25] ${hash}: ${error.message}`)}
     }
     if(!failed)lastBlock=to;
-    console.log(`[smart25] blocks=${from}-${to} wallets=${wallets.length} logQueries=${walletTopics.length*2} tx=${txs.size} events=${events} failed=${failed}`);
+    console.log(`[smart25] blocks=${from}-${to} wallets=${wallets.length} provider=alchemy_getAssetTransfers pages=${discovery.pages} records=${discovery.transferRecords} tx=${discovery.txs.size} events=${events} failed=${failed}`);
   }catch(error){
     console.error(`[smart25] ${new Date().toISOString()} ${error.message}`);
   }finally{running=false;}
@@ -171,10 +180,10 @@ async function tick(){
 
 if(!WRITE_API_TOKEN){
   console.error('[smart25] WRITE_API_TOKEN unavailable; monitor disabled');
-}else if(!walletTopics.length){
+}else if(!wallets.length){
   console.error('[smart25] no provisional wallets; monitor disabled');
 }else{
-  console.log(`[smart25] live RPC fallback enabled for ${wallets.length} provisional wallets; combined target coverage=25`);
+  console.log(`[smart25] live provider fallback enabled for ${wallets.length} provisional wallets; combined target coverage=25`);
   setTimeout(tick,2500);
   setInterval(tick,POLL_SECONDS*1000);
 }
