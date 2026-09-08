@@ -29,7 +29,10 @@ async function rpc(method,params=[]){
     body:JSON.stringify({jsonrpc:'2.0',id:rpcId++,method,params}),
     signal:AbortSignal.timeout(15000)
   });
-  if(!response.ok)throw new Error(`RPC ${method} HTTP ${response.status}`);
+  if(!response.ok){
+    let detail='';try{detail=(await response.text()).slice(0,240)}catch{}
+    throw new Error(`RPC ${method} HTTP ${response.status}${detail?`: ${detail}`:''}`);
+  }
   const payload=await response.json();
   if(payload.error)throw new Error(`RPC ${method}: ${payload.error.message||JSON.stringify(payload.error)}`);
   return payload.result;
@@ -128,6 +131,20 @@ async function analyzeTx(txHash,blockHint,existing){
   return posted;
 }
 
+async function queryWalletLogs(fromHex,toHex){
+  const logs=[];
+  // Robinhood's managed/public RPC can reject a large OR-array in topic filters.
+  // Query each wallet independently so coverage is exact and provider-compatible.
+  for(const walletTopic of walletTopics){
+    const [sent,received]=await Promise.all([
+      rpc('eth_getLogs',[{fromBlock:fromHex,toBlock:toHex,topics:[TRANSFER_TOPIC,walletTopic]}]),
+      rpc('eth_getLogs',[{fromBlock:fromHex,toBlock:toHex,topics:[TRANSFER_TOPIC,null,walletTopic]}])
+    ]);
+    logs.push(...(sent||[]),...(received||[]));
+  }
+  return logs;
+}
+
 async function tick(){
   if(running||!WRITE_API_TOKEN||!walletTopics.length)return;
   running=true;
@@ -138,19 +155,15 @@ async function tick(){
     if(from>latest)return;
     const to=Math.min(latest,from+MAX_BLOCK_RANGE-1);
     const fromHex='0x'+from.toString(16),toHex='0x'+to.toString(16);
-    const [sent,received,existing]=await Promise.all([
-      rpc('eth_getLogs',[{fromBlock:fromHex,toBlock:toHex,topics:[TRANSFER_TOPIC,walletTopics]}]),
-      rpc('eth_getLogs',[{fromBlock:fromHex,toBlock:toHex,topics:[TRANSFER_TOPIC,null,walletTopics]}]),
-      recentKeys()
-    ]);
+    const [logs,existing]=await Promise.all([queryWalletLogs(fromHex,toHex),recentKeys()]);
     const txs=new Map();
-    for(const log of [...(sent||[]),...(received||[])])if(log?.transactionHash)txs.set(log.transactionHash,log.blockNumber||null);
+    for(const log of logs)if(log?.transactionHash)txs.set(log.transactionHash,log.blockNumber||null);
     let events=0,failed=0;
     for(const [hash,blockHint] of txs){
       try{events+=await analyzeTx(hash,blockHint,existing)}catch(error){failed++;console.warn(`[smart25] ${hash}: ${error.message}`)}
     }
     if(!failed)lastBlock=to;
-    console.log(`[smart25] blocks=${from}-${to} wallets=${wallets.length} tx=${txs.size} events=${events} failed=${failed}`);
+    console.log(`[smart25] blocks=${from}-${to} wallets=${wallets.length} logQueries=${walletTopics.length*2} tx=${txs.size} events=${events} failed=${failed}`);
   }catch(error){
     console.error(`[smart25] ${new Date().toISOString()} ${error.message}`);
   }finally{running=false;}
