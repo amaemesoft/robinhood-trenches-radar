@@ -82,3 +82,9 @@ test('archive retains decisions beyond bounded UI cache and ledger mode cannot b
   const r=desk.run({state:old,actors,tacticalSignals:[...sig(),{...sig()[0],tokenAddress:'0x'+'2'.repeat(40)}],now:t});
   assert.equal(r.journal.length,2);assert.equal(r.state.decisions.length,1);assert.equal(r.snapshot.mode,'SHADOW');assert.equal(r.snapshot.execution,'PAPER_ONLY');
 });
+test('unchanged evidence does not duplicate journal decisions but evaluations continue',()=>{
+  const desk=new ShadowDesk(),t=Date.parse('2026-09-08T20:00:00Z'),m=state(1,new Date(t).toISOString(),'UNKNOWN');
+  const a=desk.run({actors,tacticalSignals:sig(),tokenState:m,now:t});
+  const b=desk.run({actors,state:a.state,tacticalSignals:sig(),tokenState:m,now:t+1000});
+  assert.equal(b.journal.filter(x=>x.kind==='decision').length,0);assert.equal(b.state.counters.evaluations,2);
+});
