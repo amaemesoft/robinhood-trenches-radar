@@ -5,10 +5,10 @@
     "dockerfilePath": "Dockerfile"
   },
   "deploy": {
-    "startCommand": "node server.js",
+    "startCommand": "node scripts/startProduction.js",
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 20,
-    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyType": "ALWAYS",
     "restartPolicyMaxRetries": 10
   }
 }
