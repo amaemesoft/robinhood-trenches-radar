@@ -49,6 +49,38 @@ const reasonText=value=>({
   independent_sellers:'Varios actores independientes están reduciendo o saliendo.'
 }[value]||String(value||'').replaceAll('_',' '));
 
+function setupViews(){
+  const buttons=[...document.querySelectorAll('[data-view-target]')];
+  const panels=[...document.querySelectorAll('[data-view-panel]')];
+  const aliases={autopilot:'desk',signals:'now',cycle:'discover'};
+  const valid=new Set(panels.map(panel=>panel.dataset.viewPanel));
+  const select=requested=>{
+    const view=valid.has(requested)?requested:'now';
+    panels.forEach(panel=>{
+      const active=panel.dataset.viewPanel===view;
+      panel.hidden=!active;
+      panel.classList.toggle('is-active',active);
+    });
+    buttons.forEach(button=>button.setAttribute('aria-selected',String(button.dataset.viewTarget===view)));
+    document.body.dataset.view=view;
+    document.dispatchEvent(new CustomEvent('trenches:viewchange',{detail:{view}}));
+  };
+  buttons.forEach(button=>button.addEventListener('click',()=>{
+    const view=button.dataset.viewTarget;
+    history.replaceState(null,'',`#${view}`);
+    select(view);
+    window.scrollTo({top:0,behavior:'smooth'});
+  }));
+  const fromHash=location.hash.slice(1);
+  select(aliases[fromHash]||fromHash||'now');
+  window.addEventListener('hashchange',()=>{
+    const next=location.hash.slice(1);
+    select(aliases[next]||next||'now');
+  });
+}
+
+setupViews();
+
 function providerText(data){
   const provider=data.sync?.provider||data.sync?.lastScan?.discovery;
   const wallets=data.sync?.lastScan?.trackedWallets||data.summary.money;

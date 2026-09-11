@@ -10,7 +10,22 @@
   const cls=v=>String(v||'wait').toLowerCase().replace(/[^a-z0-9_-]/g,'-');
 
   const ordered=agents=>['ORBIT','SIGNAL','ATLAS','SENTINEL','VECTOR','PULSE','ANCHOR','FUSE','LEDGER','COMMANDER'].filter(n=>agents?.[n]).map(n=>[n,agents[n]]);
-  const reason=d=>{const row=ordered(d.agents).find(([n,a])=>n!=='ORBIT'&&['WAIT','BLOCK','REVIEW','INVALID'].includes(a.status));return d.decision==='ENTRY'?'Todos los controles han pasado':d.decision==='EXIT'?why(d.reason):row?`${row[0]}: ${why(row[1].reason)}`:why(d.reason);};
+  const gateDefinitions=[
+    ['SEÑAL',['ORBIT','SIGNAL']],
+    ['MERCADO',['ATLAS']],
+    ['SEGURIDAD',['SENTINEL']],
+    ['TIMING',['VECTOR','PULSE']],
+    ['RIESGO',['ANCHOR','FUSE','LEDGER','COMMANDER']]
+  ];
+  const statusWeight={BLOCK:6,INVALID:6,FAIL:6,WAIT:5,REVIEW:4,PENDING:4,CAUTION:3,OBSERVE:2,PASS:1,APPROVE:1,OPENED:1,CLOSED:1,READY:1};
+  const statusLabel=v=>({PASS:'OK',APPROVE:'OK',OPENED:'OK',CLOSED:'OK',READY:'OK',OBSERVE:'OBSERVA',WAIT:'ESPERA',REVIEW:'REVISA',PENDING:'PENDIENTE',BLOCK:'BLOQUEO',INVALID:'INVÁLIDO',FAIL:'BLOQUEO'}[v]||v||'—');
+  const groupedGates=agents=>gateDefinitions.map(([label,names])=>{
+    const rows=names.filter(name=>agents?.[name]).map(name=>[name,agents[name]]);
+    if(!rows.length)return{label,status:'PENDING',reason:'required_gate_not_pass',rows};
+    const worst=[...rows].sort((a,b)=>(statusWeight[b[1].status]||2)-(statusWeight[a[1].status]||2))[0][1];
+    return{label,status:worst.status,reason:worst.reason,rows};
+  });
+  const reason=d=>{const row=ordered(d.agents).find(([,a])=>['WAIT','BLOCK','REVIEW','INVALID'].includes(a.status));return d.decision==='ENTRY'?'Todos los controles han pasado':d.decision==='EXIT'?why(d.reason):row?why(row[1].reason):why(d.reason);};
   function renderPositions(rows){
     const el=$('autopilotPositions');if(!el)return;
     if(!rows?.length){el.innerHTML='<div class="autopilot-empty">Sin posiciones abiertas. El desk sólo entra cuando todos los gates pasan.</div>';return;}
@@ -26,17 +41,18 @@
     if(!rows?.length){el.innerHTML='<div class="autopilot-empty">No hay setups esperando pullback.</div>';return;}
     el.innerHTML=rows.slice(0,8).map(s=>`<article class="autopilot-setup">
       <div><b>${esc(s.symbol||s.tokenAddress?.slice(0,8))}</b><span>${esc(s.status)}</span></div>
-      <small>VECTOR · ref ${price(s.referencePriceUsd)} · invalidación ${price(s.invalidationPriceUsd)} · pullback ${esc(s.minPullbackPct)}–${esc(s.maxPullbackPct)}%</small>
+      <small>Referencia ${price(s.referencePriceUsd)} · invalidación ${price(s.invalidationPriceUsd)} · pullback ${esc(s.minPullbackPct)}–${esc(s.maxPullbackPct)}%</small>
     </article>`).join('');
   }
 
   function renderDecision(d){
     const el=$('autopilotDecision');if(!el)return;
-    if(!d){el.innerHTML='<div class="autopilot-empty">Esperando la primera evaluación multiagente.</div>';return;}
-    const agents=ordered(d.agents).map(([name,a])=>`<span class="agent-gate ${cls(a.status)}"><b>${esc(name)}</b><i>${esc(a.status)}</i><small>${esc(why(a.reason))}</small></span>`).join('');
+    if(!d){el.innerHTML='<div class="autopilot-empty">Esperando la primera evaluación.</div>';return;}
+    const gates=groupedGates(d.agents).map(gate=>`<span class="agent-gate ${cls(gate.status)}"><b>${esc(gate.label)}</b><i>${esc(statusLabel(gate.status))}</i><small>${esc(why(gate.reason))}</small></span>`).join('');
+    const trace=ordered(d.agents).map(([name,a])=>`<p><b>${esc(name)} · ${esc(a.status)}</b> · ${esc(why(a.reason))}</p>`).join('');
     el.innerHTML=`<article class="autopilot-brief">
       <div class="autopilot-brief-top"><div><b>${esc(d.symbol||d.tokenAddress?.slice(0,8))}</b><span>${esc(d.signalState||'—')} · ${ago(d.at)}</span></div><strong>${price(d.marketPriceUsd)}</strong></div>
-      <p><b>${esc(d.decision)}</b> · ${esc(reason(d))}</p><div class="agent-grid">${agents}</div><details><summary>Contrato y evidencia</summary><code>${esc(d.tokenAddress)}</code><p>Mercado observado: ${esc(d.evidence?.observedAt||'desconocido')}</p><p>${esc(d.evidence?.events?.length||0)} eventos disponibles en ese momento.</p><code>${esc(d.id)}</code></details>
+      <p><b>${esc(d.decision)}</b> · ${esc(reason(d))}</p><div class="agent-grid">${gates}</div><details><summary>Trazabilidad técnica</summary><code>${esc(d.tokenAddress)}</code><p>Mercado observado: ${esc(d.evidence?.observedAt||'desconocido')}</p><p>${esc(d.evidence?.events?.length||0)} eventos disponibles en ese momento.</p>${trace}<code>${esc(d.id)}</code></details>
     </article>`;
   }
 
@@ -53,8 +69,8 @@
       $('autopilotInitial').textContent=usd(b.initialBalanceUsd);
       $('autopilotClosed').textContent=String(d.counters?.exits||0);
       $('autopilotBlocked').textContent=String(d.counters?.blocked||0);
-      $('autopilotAuditor').textContent=`${d.auditor?.samples||0} observaciones recientes · ${d.auditor?.completed24h||0} con retorno a 24 h. ${d.auditor?.evidence==='INSUFFICIENT_SAMPLE'?'Muestra insuficiente para atribuir valor a los agentes.':'Resultados observacionales; no demuestran causalidad.'} MFE/MAE basados en precios muestreados. No cambia los gates.`;
-      $('autopilotDecisions').innerHTML=(d.recentDecisions||[]).slice(1).map(x=>`<details><summary>${esc(x.symbol)} · ${esc(x.decision)} · ${ago(x.at)}</summary><p>${esc(reason(x))}</p><code>${esc(x.tokenAddress)}</code>${ordered(x.agents).map(([n,a])=>`<p><b>${esc(n)}: ${esc(a.status)}</b> · ${esc(why(a.reason))}</p>`).join('')}</details>`).join('');
+      $('autopilotAuditor').textContent=`${d.auditor?.samples||0} observaciones recientes · ${d.auditor?.completed24h||0} con retorno a 24 h. ${d.auditor?.evidence==='INSUFFICIENT_SAMPLE'?'Muestra todavía insuficiente.':'Resultados observacionales; no demuestran causalidad.'} MFE/MAE usan precios muestreados.`;
+      $('autopilotDecisions').innerHTML=(d.recentDecisions||[]).slice(1).map(x=>`<details><summary>${esc(x.symbol)} · ${esc(x.decision)} · ${ago(x.at)}</summary><p>${esc(reason(x))}</p><code>${esc(x.tokenAddress)}</code><details><summary>Trazabilidad interna</summary>${ordered(x.agents).map(([n,a])=>`<p><b>${esc(n)} · ${esc(a.status)}</b> · ${esc(why(a.reason))}</p>`).join('')}</details></details>`).join('');
       $('autopilotEquity').textContent=usd(b.equityUsd);
       $('autopilotPnl').textContent=`${usd(b.totalPnlUsd)} · ${pct(b.totalReturnPct)}`;
       $('autopilotCash').textContent=usd(b.cashUsd);
@@ -68,5 +84,12 @@
       if($('autopilotRisk'))$('autopilotRisk').textContent=`Shadow Desk no disponible: ${e.message}`;
     }
   }
-  load();setInterval(load,45000);
+  let refreshTimer=null;
+  function setActive(active){
+    if(active&&!refreshTimer){load();refreshTimer=setInterval(load,45000);}
+    if(!active&&refreshTimer){clearInterval(refreshTimer);refreshTimer=null;}
+  }
+  document.addEventListener('trenches:viewchange',event=>setActive(event.detail?.view==='desk'));
+  const deskPanel=document.querySelector('[data-view-panel="desk"]');
+  setActive(!deskPanel||!deskPanel.hidden);
 })();

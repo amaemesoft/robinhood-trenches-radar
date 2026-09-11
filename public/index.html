@@ -7,9 +7,9 @@
   <title>Trenches Radar</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg">
-  <link rel="stylesheet" href="/styles.css">
-  <link rel="stylesheet" href="/cycle.css?v=20260908b">
-  <link rel="stylesheet" href="/autopilot.css?v=20260909c">
+  <link rel="stylesheet" href="/styles.css?v=20260911a">
+  <link rel="stylesheet" href="/cycle.css?v=20260911a">
+  <link rel="stylesheet" href="/autopilot.css?v=20260911a">
 </head>
 <body>
   <div class="shell">
@@ -22,126 +22,145 @@
     </header>
 
     <main>
-      <nav class="desk-nav" aria-label="Secciones"><a href="#autopilot">AUTOPILOT</a><a href="#signals">Radar</a></nav>
-      <section class="hero">
-        <span class="eyebrow">DECISIÓN DEL RADAR</span>
-        <h2 id="headline">Comprobando señales…</h2>
-        <p id="decisionNote" class="decision-note">Buscando confluencia entre scouts y money wallets sin perseguir precio.</p>
-        <div class="metrics decision-metrics">
-          <div><span>Entradas para revisar</span><b id="entries">—</b></div>
-          <div><span>En vigilancia</span><b id="watching">—</b></div>
-          <div><span>Alertas de salida</span><b id="dist">—</b></div>
-        </div>
-        <p id="fresh" class="feed-line">Conectando con el feed.</p>
-        <details class="hero-tech">
-          <summary>Estado del motor</summary>
-          <div class="hero-tech-grid">
-            <span>Wallets on-chain <b id="money">—</b></span>
-            <span>Compras verificadas <b id="verified">—</b></span>
+      <nav class="primary-nav" aria-label="Vistas principales">
+        <button type="button" data-view-target="now" aria-selected="true">AHORA</button>
+        <button type="button" data-view-target="discover" aria-selected="false">DESCUBRIR</button>
+        <button type="button" data-view-target="desk" aria-selected="false">DESK</button>
+      </nav>
+
+      <section class="view-panel is-active" data-view-panel="now" id="now">
+        <section class="hero">
+          <span class="eyebrow">DECISIÓN DEL RADAR</span>
+          <h2 id="headline">Comprobando señales…</h2>
+          <p id="decisionNote" class="decision-note">Buscando confluencia entre scouts y money wallets sin perseguir precio.</p>
+          <div class="metrics decision-metrics">
+            <div><span>Entradas para revisar</span><b id="entries">—</b></div>
+            <div><span>En vigilancia</span><b id="watching">—</b></div>
+            <div><span>Alertas de salida</span><b id="dist">—</b></div>
           </div>
-          <p id="systemMeta" class="system-meta">—</p>
+          <p id="fresh" class="feed-line">Conectando con el feed.</p>
+          <details class="hero-tech">
+            <summary>Estado del motor</summary>
+            <div class="hero-tech-grid">
+              <span>Wallets on-chain <b id="money">—</b></span>
+              <span>Compras verificadas <b id="verified">—</b></span>
+            </div>
+            <p id="systemMeta" class="system-meta">—</p>
+          </details>
+        </section>
+
+        <section class="section priority-section">
+          <div class="section-head">
+            <div><span class="eyebrow">AHORA MISMO</span><h2>Qué merece atención</h2></div>
+            <span id="signalCount" class="count-pill">0</span>
+          </div>
+          <p class="section-copy priority-copy">Primero ves la decisión. La evidencia avanzada queda debajo.</p>
+          <div id="signals" class="stack"></div>
+          <details id="observationsPanel" class="fold" hidden>
+            <summary><span>Observaciones sin señal</span><strong id="ignoredCount">0</strong></summary>
+            <p>Movimientos que todavía no constituyen una entrada económica verificable.</p>
+            <div id="observations" class="stack compact"></div>
+          </details>
+        </section>
+      </section>
+
+      <section class="view-panel" data-view-panel="discover" id="discover" hidden>
+        <section class="section cycle-section">
+          <div class="section-head">
+            <div><span class="eyebrow">CYCLE MEMES</span><h2>Quién puede definir este ciclo</h2></div>
+            <span id="cycleCount" class="count-pill">0</span>
+          </div>
+          <p class="section-copy">Potencial cultural y calidad de entrada son preguntas distintas. Aquí ves qué narrativas acumulan evidencia; la decisión táctica permanece separada.</p>
+          <div id="cycleRisingWrap" class="cycle-rising-wrap" hidden>
+            <h3>Subiendo más rápido</h3>
+            <p class="section-copy">Mejora del Cycle Potential, no market cap ni menciones brutas.</p>
+            <div id="cycleRising" class="cycle-rising"></div>
+          </div>
+          <div id="cycleMemes" class="cycle-grid">
+            <div class="empty"><b>Calculando candidatos…</b><span>Separando potencial cultural de calidad de entrada.</span></div>
+          </div>
+          <details class="fold methodology-fold">
+            <summary><span>Cómo interpreta candidatos el Cycle Radar</span><strong>?</strong></summary>
+            <p>Aprende de patrones históricos sin copiarlos como plantillas. Las categorías superiores requieren crecimiento/retención de holders y resiliencia post-drawdown medidos. Safety o datos UNKNOWN nunca se convierten en PASS.</p>
+          </details>
+        </section>
+
+        <section class="section secondary-section">
+          <div class="section-head">
+            <div><span class="eyebrow">EVIDENCIA</span><h2>Fuentes y aprendizaje</h2></div>
+          </div>
+          <p class="section-copy">Abre esta capa sólo cuando quieras auditar de dónde sale una señal.</p>
+
+          <details class="fold source-fold">
+            <summary><span>Money wallets on-chain</span><strong id="moneyCount">0</strong></summary>
+            <p>Aportan evidencia económica sólo cuando la transacción es BUY/CALL/ADD/REENTRY.</p>
+            <div id="actors" class="stack compact"></div>
+          </details>
+
+          <details id="socialPanel" class="fold source-fold" hidden>
+            <summary><span>Scouts sociales monitorizados</span><strong id="socialCount">0</strong></summary>
+            <p>Priorizan descubrimiento temprano, pero nunca sustituyen una compra on-chain verificada.</p>
+            <div id="socialActors" class="stack compact"></div>
+          </details>
+
+          <details class="fold source-fold">
+            <summary><span>Aprendizaje y calibración</span><strong>↗</strong></summary>
+            <div id="calibration" class="stack compact"></div>
+          </details>
+        </section>
+
+        <details class="fold help">
+          <summary><span>Glosario de indicadores</span><strong>?</strong></summary>
+          <div class="legend">
+            <p><b>Alpha</b> · Fuerza de entradas económicas verificadas; una mención social no crea Alpha.</p>
+            <p><b>Descubrimiento</b> · Evidencia social temprana para priorizar, nunca para autorizar una entrada.</p>
+            <p><b>Cycle Potential</b> · Potencial cultural en un horizonte distinto del Entry Score.</p>
+            <p><b>Safety</b> · Riesgos críticos del contrato y del pool. UNKNOWN nunca equivale a PASS.</p>
+            <p><b>Salida</b> · Capacidad de vender el tamaño objetivo con impacto aceptable.</p>
+          </div>
         </details>
       </section>
 
-      <section class="section priority-section">
-        <div class="section-head">
-          <div><span class="eyebrow">AHORA MISMO</span><h2>Qué merece atención</h2></div>
-          <span id="signalCount" class="count-pill">0</span>
-        </div>
-        <p class="section-copy priority-copy">Primero ves la decisión. Debajo, las evidencias que la justifican. Los datos técnicos quedan plegados.</p>
-        <div id="signals" class="stack"></div>
-        <details id="observationsPanel" class="fold" hidden>
-          <summary><span>Observaciones sin señal</span><strong id="ignoredCount">0</strong></summary>
-          <p>Movimientos detectados que todavía no constituyen una entrada económica verificable.</p>
-          <div id="observations" class="stack compact"></div>
-        </details>
+      <section class="view-panel" data-view-panel="desk" id="desk" hidden>
+        <section class="autopilot-section" id="autopilot">
+          <div class="autopilot-head">
+            <div><span class="eyebrow">LABORATORIO · SHADOW MODE</span><h2>Trenches Desk</h2></div>
+            <span class="shadow-pill">SIN DINERO REAL</span>
+          </div>
+          <p class="section-copy autopilot-copy">Aquí medimos si el sistema tiene edge con decisiones prospectivas y capital ficticio. No es la pantalla principal ni ejecuta operaciones.</p>
+          <div class="autopilot-metrics">
+            <div><span>Equity paper</span><b id="autopilotEquity">—</b></div>
+            <div><span>P&amp;L total</span><b id="autopilotPnl">—</b></div>
+            <div><span>Posiciones</span><b id="autopilotOpen">0</b></div>
+            <div><span>Operaciones cerradas</span><b id="autopilotClosed">—</b></div>
+          </div>
+          <p id="autopilotRisk" class="autopilot-statusline">El desk se carga al abrir esta vista.</p>
+          <div class="autopilot-grid">
+            <div class="autopilot-panel"><h3>POSICIONES ABIERTAS</h3><div id="autopilotPositions"></div></div>
+            <div class="autopilot-panel"><h3>SETUPS ESPERANDO · <span id="autopilotWaiting">0</span></h3><div id="autopilotSetups"></div></div>
+            <div class="autopilot-panel primary-evaluation"><h3>ÚLTIMA EVALUACIÓN</h3><div id="autopilotDecision"></div><details><summary>Más decisiones</summary><div id="autopilotDecisions"></div></details></div>
+            <div class="autopilot-panel"><h3>PAPER TRADES</h3><div id="autopilotTrades"></div></div>
+          </div>
+          <details class="fold desk-audit-fold">
+            <summary><span>Control del laboratorio y resultados</span><strong>+</strong></summary>
+            <div class="autopilot-secondary-metrics">
+              <div><span>Balance inicial</span><b id="autopilotInitial">—</b></div>
+              <div><span>Efectivo</span><b id="autopilotCash">—</b></div>
+              <div><span>Evaluaciones bloqueadas</span><b id="autopilotBlocked">—</b></div>
+            </div>
+            <p id="autopilotAuditor">Sin observaciones cargadas.</p>
+            <p>El evaluador de resultados observa retornos posteriores sin cambiar los gates.</p>
+            <a href="/api/autopilot/history" target="_blank" rel="noopener">Journal JSON</a> · <a href="/api/autopilot/history?kind=audit" target="_blank" rel="noopener">Resultados JSON</a>
+          </details>
+        </section>
       </section>
-
-      <section class="autopilot-section" id="autopilot">
-        <div class="autopilot-head">
-          <div><span class="eyebrow">AUTOPILOT · SHADOW MODE</span><h2>Trenches Desk</h2></div>
-          <span class="shadow-pill">SIN DINERO REAL</span>
-        </div>
-        <p class="section-copy autopilot-copy">Datos reales, capital ficticio. El desk espera una entrada válida y explica cada bloqueo. AUDITOR mide los resultados sin cambiar las reglas.</p>
-        <div class="autopilot-metrics">
-          <div><span>Balance inicial</span><b id="autopilotInitial">—</b></div>
-          <div><span>Equity actual</span><b id="autopilotEquity">—</b></div>
-          <div><span>P&amp;L total</span><b id="autopilotPnl">—</b></div>
-          <div><span>Efectivo disponible</span><b id="autopilotCash">—</b></div>
-          <div><span>Operaciones cerradas</span><b id="autopilotClosed">—</b></div>
-          <div><span>Evaluaciones bloqueadas</span><b id="autopilotBlocked">—</b></div>
-        </div>
-        <p id="autopilotRisk" class="autopilot-statusline">Arrancando el desk…</p>
-        <div class="autopilot-grid">
-          <div class="autopilot-panel"><h3>POSICIONES ABIERTAS · <span id="autopilotOpen">0</span></h3><div id="autopilotPositions"></div></div>
-          <div class="autopilot-panel"><h3>VECTOR · SETUPS ESPERANDO · <span id="autopilotWaiting">0</span></h3><div id="autopilotSetups"></div></div>
-          <div class="autopilot-panel"><h3>ÚLTIMO BRIEFING MULTIAGENTE</h3><div id="autopilotDecision"></div><details><summary>Más decisiones y motivos</summary><div id="autopilotDecisions"></div></details></div>
-          <div class="autopilot-panel"><h3>LEDGER · PAPER TRADES</h3><div id="autopilotTrades"></div></div>
-          <div class="autopilot-panel"><h3>AUDITOR · RESULTADOS OBSERVADOS</h3><div id="autopilotAuditor"></div><details><summary>Historial completo y evidencia</summary><p>Las decisiones incluyen contrato, agentes, evidencia y política utilizada.</p><a href="/api/autopilot/history" target="_blank" rel="noopener">Ver journal JSON</a> · <a href="/api/autopilot/history?kind=audit" target="_blank" rel="noopener">Ver auditorías JSON</a></details></div>
-        </div>
-      </section>
-
-      <section class="section cycle-section">
-        <div class="section-head">
-          <div><span class="eyebrow">CYCLE MEMES</span><h2>Quién puede definir este ciclo</h2></div>
-          <span id="cycleCount" class="count-pill">0</span>
-        </div>
-        <p class="section-copy">Universo persistente y separado del radar de 24h. Un candidato no desaparece por quedarse sin señal táctica: cambia su velocidad y su evidencia, mientras el motor sigue midiendo holders, Money, cultura, mercado y supervivencia.</p>
-        <div id="cycleRisingWrap" class="cycle-rising-wrap" hidden>
-          <h3>🚀 Rising fastest</h3>
-          <p class="section-copy">Ordenado por mejora real del Cycle Potential, no por market cap ni por número bruto de menciones.</p>
-          <div id="cycleRising" class="cycle-rising"></div>
-        </div>
-        <div id="cycleMemes" class="cycle-grid">
-          <div class="empty"><b>Calculando candidatos…</b><span>Separando potencial cultural de calidad de entrada.</span></div>
-        </div>
-        <p class="cycle-note">V3 aprende de PEPE, WIF, POPCAT, BONK, BODEN y BOME como patrones históricos, no como plantillas rígidas. Las categorías superiores requieren crecimiento/retención de holders y resiliencia post-drawdown medidos; Safety o datos UNKNOWN nunca se convierten en PASS.</p>
-      </section>
-
-      <section class="section secondary-section">
-        <div class="section-head">
-          <div><span class="eyebrow">EVIDENCIA</span><h2>Fuentes y aprendizaje</h2></div>
-        </div>
-        <p class="section-copy">La pantalla principal no necesita enseñarte una lista de traders. Aquí puedes abrirla cuando quieras comprobar de dónde sale una señal.</p>
-
-        <details class="fold source-fold">
-          <summary><span>Money wallets on-chain</span><strong id="moneyCount">0</strong></summary>
-          <p>Estas fuentes sí pueden aportar evidencia económica de entrada, siempre que la transacción sea clasificable como BUY/CALL/ADD/REENTRY.</p>
-          <div id="actors" class="stack compact"></div>
-        </details>
-
-        <details id="socialPanel" class="fold source-fold" hidden>
-          <summary><span>Scouts sociales monitorizados</span><strong id="socialCount">0</strong></summary>
-          <p>Ya alimentan descubrimiento temprano desde feeds públicos. Mejoran prioridad y contexto, pero nunca sustituyen una compra on-chain verificada.</p>
-          <div id="socialActors" class="stack compact"></div>
-        </details>
-
-        <details class="fold source-fold">
-          <summary><span>Cómo está aprendiendo el radar</span><strong>↗</strong></summary>
-          <div id="calibration" class="stack compact"></div>
-        </details>
-      </section>
-
-      <details class="fold help">
-        <summary><span>Qué significa cada indicador</span><strong>?</strong></summary>
-        <div class="legend">
-          <p><b>Alpha</b> · Solo mide fuerza de entradas económicas verificadas. Una mención social no crea Alpha.</p>
-          <p><b>Descubrimiento</b> · Fuerza de la evidencia social temprana. Sirve para priorizar qué mirar antes, no para autorizar una entrada.</p>
-          <p><b>Cycle Potential</b> · Probabilidad relativa de estar formando un meme cultural del ciclo. Es persistente, usa un horizonte distinto del Entry Score y nunca autoriza una compra por sí solo.</p>
-          <p><b>Money hold</b> · Wallets establecidas que mantienen saldo actual. Confirma adopción para Cycle Potential, pero no equivale a BUY reciente.</p>
-          <p><b>Absorción</b> · Comprueba si los holders crecen al menos tan rápido como el precio; ayuda a diferenciar adopción de puro chase.</p>
-          <p><b>Resiliencia</b> · Sólo se mide después de un drawdown material. No haber sufrido todavía un crash es NOT_TESTED, nunca PASS.</p>
-          <p><b>Safety</b> · Riesgos críticos del contrato y del pool. UNKNOWN nunca equivale a PASS.</p>
-          <p><b>Salida</b> · Capacidad de vender el tamaño objetivo sin impacto excesivo.</p>
-        </div>
-      </details>
 
       <p id="generated" class="generated"></p>
     </main>
   </div>
-  <script src="/app.js"></script>
+  <script src="/app.js?v=20260911a"></script>
   <script src="/tokenNames.js?v=20260908b"></script>
-  <script src="/autopilot.js?v=20260909c"></script>
-  <script src="/cycle.js?v=20260908b"></script>
+  <script src="/autopilot.js?v=20260911a"></script>
+  <script src="/cycle.js?v=20260911a"></script>
 </body>
 </html>

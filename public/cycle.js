@@ -8,7 +8,6 @@
   const entryLabel=value=>({ENTRY_CANDIDATE:'REVISAR ENTRADA',HIGH_CONFLUENCE:'ALTA CONFLUENCIA',DO_NOT_CHASE:'NO PERSEGUIR',DISTRIBUTION:'SALIDA / DISTRIBUCIÓN',BLOCKED:'NO ENTRAR',WATCH:'VIGILAR',IGNORE:'SIN SEÑAL DE ENTRADA',NO_RECENT_SIGNAL:'SIN SEÑAL TÁCTICA RECIENTE'}[value]||value||'SIN SEÑAL TÁCTICA RECIENTE');
   const directionLabel=value=>({RISING_FAST:'SUBIENDO RÁPIDO',RISING:'SUBIENDO',STABLE:'ESTABLE',COOLING:'ENFRIANDO',FALLING_FAST:'CAYENDO RÁPIDO',BUILDING_HISTORY:'CREANDO HISTÓRICO'}[value]||value||'CREANDO HISTÓRICO');
   const lifecycleLabel=value=>({ACTIVE:'activo',WARM:'seguimiento',COOLING:'enfriando',DORMANT:'dormido',RESEARCH:'investigación'}[value]||value||'investigación');
-  const componentLabel=value=>({money:'Money',culture:'Cultura',holders:'Holders',resilience:'Resiliencia',velocity:'Atención',market:'Mercado',safety:'Safety',momentum:'Momentum',organic:'Absorción'}[value]||value);
   const reasonLabel=value=>String(value||'')
     .replace(/ established money wallets currently hold/,' money wallets establecidas mantienen saldo')
     .replace('1 established money wallet currently holds','1 money wallet establecida mantiene saldo')
@@ -35,16 +34,6 @@
   const delta=value=>Number.isFinite(Number(value))?`${Number(value)>=0?'+':''}${Number(value).toFixed(1)}`:'—';
   const pct=value=>Number.isFinite(Number(value))?`${Math.round(Number(value)*100)}%`:'—';
 
-  function componentChips(components={}){
-    const keys=['culture','holders','money','resilience','market'];
-    return keys.map(key=>{
-      const raw=components[key],known=raw!=null&&Number.isFinite(Number(raw));
-      const value=known?Math.round(Number(raw)):'—';
-      const tone=!known?'':value>=75?'positive':value>=55?'info':value<35?'negative':'';
-      return`<span class="cycle-chip ${tone}"><small>${esc(componentLabel(key))}</small><b>${esc(value)}</b></span>`;
-    }).join('');
-  }
-
   function analogueLine(analogues=[]){
     if(!analogues.length)return'';
     return`<div class="cycle-analogues"><small>PATRONES HISTÓRICOS</small>${analogues.map(a=>`<span><b>${esc(a.label)}</b> · ${esc(a.why)}${a.warning?` · ⚠ ${esc(a.warning)}`:''}</span>`).join('')}</div>`;
@@ -66,25 +55,19 @@
         <span class="cycle-direction direction-${esc(String(signal.cycleDirection||'building_history').toLowerCase())}">${esc(directionLabel(signal.cycleDirection))}</span>
         <span class="cycle-entry ${toneForEntry(signal.state)}">Entrada: ${esc(entryLabel(signal.state))}</span>
       </div>
-      <div class="cycle-components">${componentChips(signal.cycleComponents)}</div>
-      <div class="cycle-evidence-line">
-        <span>Cobertura <b>${esc(pct(signal.cycleCoverage))}</b></span>
-        <span>Confianza <b>${esc(pct(signal.cycleConfidence))}</b></span>
-        <span>Holders <b>${esc(fmt(evidence.currentHolders))}</b></span>
-        <span>Money hold <b>${esc(evidence.currentQualifiedMoneyHolders??0)}</b></span>
+      <div class="cycle-summary">
+        <span><small>CONSENSO</small><b>${esc(evidence.moneyActors??0)} money · ${esc(evidence.socialScouts??0)} social</b></span>
+        <span><small>CONFIANZA</small><b>${esc(pct(signal.cycleConfidence))}</b></span>
+        <span><small>CAMBIO 24H</small><b>${esc(delta(signal.cycleDelta24h))}</b></span>
       </div>
-      <div class="cycle-evidence-line">
-        <span>Money ciclo <b>${esc(evidence.moneyActors??0)}</b></span>
-        <span>Scouts <b>${esc(evidence.socialScouts??0)}</b></span>
-        <span>Δ score 24h <b>${esc(delta(signal.cycleDelta24h))}</b></span>
-        <span>Top10 <b>${evidence.top10Pct==null?'—':esc(fmt(evidence.top10Pct))+'%'}</b></span>
-      </div>
-      <div class="cycle-thesis">
-        <div><small>POR QUÉ PUEDE SUBIR DE CATEGORÍA</small>${reasons.length?`<ul>${reasons.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:'<p>Todavía no hay evidencia suficiente para una tesis fuerte.</p>'}</div>
-        <div><small>QUÉ PUEDE ROMPER LA TESIS</small>${risks.length?`<ul>${risks.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:'<p>Sin riesgos nuevos detectados por el motor.</p>'}</div>
-      </div>
-      ${analogueLine(signal.cycleAnalogues||[])}
-      <details class="technical cycle-tech"><summary>Ver evidencia completa</summary>
+      <p class="cycle-primary-reason"><b>Por qué importa:</b> ${esc(reasons[0]||'Todavía está construyendo una tesis verificable.')}</p>
+      ${risks[0]?`<p class="cycle-primary-risk"><b>Riesgo principal:</b> ${esc(risks[0])}</p>`:''}
+      <details class="technical cycle-tech"><summary>Por qué, riesgos y datos</summary>
+        <div class="cycle-thesis">
+          <div><small>EVIDENCIA A FAVOR</small>${reasons.length?`<ul>${reasons.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:'<p>Todavía no hay evidencia suficiente para una tesis fuerte.</p>'}</div>
+          <div><small>RIESGOS / INVALIDACIÓN</small>${risks.length?`<ul>${risks.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:'<p>Sin riesgos nuevos detectados por el motor.</p>'}</div>
+        </div>
+        ${analogueLine(signal.cycleAnalogues||[])}
         <p>Cycle Potential ${esc(Math.round(Number(signal.cyclePotential||0)))}/100 · potencial bruto ${esc(signal.cycleRawPotential??'—')} · cobertura ${esc(pct(signal.cycleCoverage))} · confianza ${esc(pct(signal.cycleConfidence))} · motor V${esc(signal.cycleVersion||4)}. Entry Score sigue siendo independiente.</p>
         <p>Cultura ${esc(signal.cycleComponents?.culture??0)} · Holders ${esc(signal.cycleComponents?.holders??'—')} · Money ${esc(signal.cycleComponents?.money??'—')} · Resiliencia ${esc(signal.cycleComponents?.resilience??'—')} · Mercado ${esc(signal.cycleComponents?.market??'—')} · Atención ${esc(signal.cycleComponents?.velocity??0)} · Absorción ${esc(signal.cycleComponents?.organic??'—')}.</p>
         <p>Holder 24h ${esc(evidence.holderGrowth24h??'—')}% · 3d ${esc(evidence.holderGrowth3d??'—')}% · 7d ${esc(evidence.holderGrowth7d??'—')}% · Drawdown máx. observado ${esc(evidence.maxDrawdownPct??'—')}% · recuperación del peak ${esc(evidence.peakRecoveryPct??'—')}%.</p>
@@ -127,6 +110,12 @@
     }
   }
 
-  loadCycle();
-  setInterval(loadCycle,30000);
+  let refreshTimer=null;
+  function setActive(active){
+    if(active&&!refreshTimer){loadCycle();refreshTimer=setInterval(loadCycle,30000);}
+    if(!active&&refreshTimer){clearInterval(refreshTimer);refreshTimer=null;}
+  }
+  document.addEventListener('trenches:viewchange',event=>setActive(event.detail?.view==='discover'));
+  const discoverPanel=document.querySelector('[data-view-panel="discover"]');
+  setActive(!discoverPanel||!discoverPanel.hidden);
 })();
