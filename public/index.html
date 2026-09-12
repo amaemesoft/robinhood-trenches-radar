@@ -7,8 +7,8 @@
   <title>Trenches Radar</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg">
-  <link rel="stylesheet" href="/styles.css?v=20260911a">
-  <link rel="stylesheet" href="/cycle.css?v=20260911a">
+  <link rel="stylesheet" href="/styles.css?v=20260912a">
+  <link rel="stylesheet" href="/cycle.css?v=20260912a">
   <link rel="stylesheet" href="/autopilot.css?v=20260911a">
 </head>
 <body>
@@ -79,6 +79,16 @@
           <div id="cycleMemes" class="cycle-grid">
             <div class="empty"><b>Calculando candidatos…</b><span>Separando potencial cultural de calidad de entrada.</span></div>
           </div>
+          <dialog id="cycleDetailDialog" class="cycle-dialog" aria-labelledby="cycleDetailTitle" aria-describedby="cycleDetailIntro">
+            <div class="cycle-dialog-shell">
+              <div class="cycle-dialog-handle" aria-hidden="true"></div>
+              <div class="cycle-dialog-bar">
+                <div><span class="eyebrow">ANÁLISIS DEL CANDIDATO</span><h3 id="cycleDetailTitle">Detalle de moneda</h3></div>
+                <button type="button" class="cycle-dialog-close" data-cycle-close aria-label="Cerrar análisis">×</button>
+              </div>
+              <div id="cycleDetailBody" class="cycle-detail-body"></div>
+            </div>
+          </dialog>
           <details class="fold methodology-fold">
             <summary><span>Cómo interpreta candidatos el Cycle Radar</span><strong>?</strong></summary>
             <p>Aprende de patrones históricos sin copiarlos como plantillas. Las categorías superiores requieren crecimiento/retención de holders y resiliencia post-drawdown medidos. Safety o datos UNKNOWN nunca se convierten en PASS.</p>
@@ -161,6 +171,6 @@
   <script src="/app.js?v=20260911a"></script>
   <script src="/tokenNames.js?v=20260908b"></script>
   <script src="/autopilot.js?v=20260911a"></script>
-  <script src="/cycle.js?v=20260911a"></script>
+  <script src="/cycle.js?v=20260912a"></script>
 </body>
 </html>
