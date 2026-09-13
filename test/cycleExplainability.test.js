@@ -29,6 +29,7 @@ test('tapping a rising coin renders its exact evidence and preserves UNKNOWN',as
   });
   const nodes={
     '#cycleCount':element(),'#cycleMemes':element(),'#cycleRising':element(),'#cycleRisingWrap':element({hidden:true}),
+    '#cycleRanking':element(),'#cycleRankingDate':element(),'#cycleOtherWrap':element({hidden:true}),
     '#cycleDetailDialog':dialog,'#cycleDetailBody':element(),'#cycleDetailTitle':element(),
     '[data-view-panel="discover"]':element({hidden:true})
   };
@@ -38,7 +39,7 @@ test('tapping a rising coin renders its exact evidence and preserves UNKNOWN',as
     addEventListener(type,listener){documentListeners[type]=listener;}
   };
   const payload={cycleMemes:[{
-    tokenAddress:address,symbol:'frong ($FRONG)',cycleStage:'BREAKOUT',cycleLifecycle:'ACTIVE',cycleDirection:'RISING_FAST',
+    tokenAddress:address,symbol:'frong ($FRONG)',cycleCohort:true,cycleStage:'BREAKOUT',cycleLifecycle:'ACTIVE',cycleDirection:'RISING_FAST',
     cyclePotential:63,cycleRawPotential:79.4,cycleCoverage:.62,cycleConfidence:.71,cycleVersion:4,
     cycleDelta6h:4.2,cycleDelta24h:9.5,cycleDelta3d:14.1,attentionDirection:'RISING',state:'NO_RECENT_SIGNAL',
     cycleComponents:{culture:91,holders:null,money:74,resilience:null,market:68,velocity:76,safety:25,momentum:82,organic:null},
@@ -61,6 +62,8 @@ test('tapping a rising coin renders its exact evidence and preserves UNKNOWN',as
   await new Promise(resolve=>setImmediate(resolve));
 
   assert.match(nodes['#cycleRising'].innerHTML,/data-cycle-address="0x6245/);
+  assert.match(nodes['#cycleRanking'].innerHTML,/En desarrollo/);
+  assert.match(nodes['#cycleRanking'].innerHTML,/Cycle 63\/100/);
   const button=element({dataset:{cycleAddress:address}});
   nodes['#cycleRising'].listeners.click({target:{closest:()=>button}});
 

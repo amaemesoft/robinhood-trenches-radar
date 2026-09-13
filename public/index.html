@@ -8,7 +8,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg">
   <link rel="stylesheet" href="/styles.css?v=20260912a">
-  <link rel="stylesheet" href="/cycle.css?v=20260912a">
+  <link rel="stylesheet" href="/cycle.css?v=20260913a">
   <link rel="stylesheet" href="/autopilot.css?v=20260911a">
 </head>
 <body>
@@ -71,13 +71,30 @@
             <span id="cycleCount" class="count-pill">0</span>
           </div>
           <p class="section-copy">Potencial cultural y calidad de entrada son preguntas distintas. Aquí ves qué narrativas acumulan evidencia; la decisión táctica permanece separada.</p>
+          <div class="cycle-ranking-wrap">
+            <div class="cycle-subhead">
+              <div><span class="eyebrow">RANKING DIARIO</span><h3>Los 8 candidatos del ciclo</h3></div>
+              <span id="cycleRankingDate" class="cycle-ranking-date">Actualizando…</span>
+            </div>
+            <p class="section-copy">Ordenados por posibilidad relativa según Cycle Potential y confianza. Pertenecer a la cohorte no añade puntos y no implica que sea buen momento de entrada.</p>
+            <div class="cycle-ranking-scroll">
+              <table class="cycle-ranking-table">
+                <thead><tr><th>#</th><th>Candidato</th><th>Posibilidad</th><th>Por qué</th><th>Freno</th><th>Entrada</th></tr></thead>
+                <tbody id="cycleRanking"><tr><td colspan="6">Construyendo el ranking con evidencia verificable…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
           <div id="cycleRisingWrap" class="cycle-rising-wrap" hidden>
             <h3>Subiendo más rápido</h3>
             <p class="section-copy">Mejora del Cycle Potential, no market cap ni menciones brutas.</p>
             <div id="cycleRising" class="cycle-rising"></div>
           </div>
-          <div id="cycleMemes" class="cycle-grid">
-            <div class="empty"><b>Calculando candidatos…</b><span>Separando potencial cultural de calidad de entrada.</span></div>
+          <div id="cycleOtherWrap" class="cycle-other-wrap" hidden>
+            <h3>Otros candidatos detectados</h3>
+            <p class="section-copy">Aspirantes descubiertos por el radar que todavía no pertenecen a la cohorte principal.</p>
+            <div id="cycleMemes" class="cycle-grid">
+              <div class="empty"><b>Calculando candidatos…</b><span>Separando potencial cultural de calidad de entrada.</span></div>
+            </div>
           </div>
           <dialog id="cycleDetailDialog" class="cycle-dialog" aria-labelledby="cycleDetailTitle" aria-describedby="cycleDetailIntro">
             <div class="cycle-dialog-shell">
@@ -171,6 +188,6 @@
   <script src="/app.js?v=20260911a"></script>
   <script src="/tokenNames.js?v=20260908b"></script>
   <script src="/autopilot.js?v=20260911a"></script>
-  <script src="/cycle.js?v=20260912a"></script>
+  <script src="/cycle.js?v=20260913a"></script>
 </body>
 </html>

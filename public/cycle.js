@@ -52,6 +52,7 @@
     return Number.isFinite(time)?new Intl.DateTimeFormat('es-ES',{dateStyle:'medium',timeStyle:'short'}).format(new Date(time)):'No medido';
   };
   const statusLabel=value=>({PASS:'PASS · confirmado',CAUTION:'PRECAUCIÓN',UNKNOWN:'UNKNOWN · no confirmado',FAIL:'FAIL · fallido'}[value]||value||'UNKNOWN · no confirmado');
+  const likelihoodLabel=value=>({DISCOVERED:'Sin confirmar',EMERGING:'Temprana',BREAKOUT:'En desarrollo',CULTURAL_CONTENDER:'Competitiva',CHAIN_ICON:'Alta',CYCLE_MEME:'Muy alta'}[value]||'Sin confirmar');
   const componentMeta=[
     ['culture','Cultura',20,'Amplitud de scouts sociales independientes y diversidad de fuentes.'],
     ['holders','Holders + absorción',20,'Adopción y retención; si existe, incorpora si los holders crecen más rápido que el precio.'],
@@ -191,7 +192,7 @@
     const risks=(signal.cycleRisks||[]).map(riskLabel);
     const evidence=signal.cycleEvidence||{};
     const missing=(signal.cycleMissingData||[]).map(v=>({holder_growth:'crecimiento/retención de holders',long_horizon_resilience:'resiliencia larga',holder_vs_price_absorption:'holders vs precio',full_market_structure:'estructura completa de mercado',current_money_holdings:'holdings actuales de Money'}[v]||v));
-    const pinned=signal.cyclePinned?'<span class="cycle-pinned">SEGUIMIENTO FIJO</span>':'';
+    const pinned=signal.cyclePinned?'<span class="cycle-pinned">TESIS EN SEGUIMIENTO</span>':'';
     return`<article class="cycle-card stage-${esc(String(signal.cycleStage||'DISCOVERED').toLowerCase())}">
       <div class="cycle-card-head">
         <div class="cycle-rank">${esc(rankLabel)}</div>
@@ -230,6 +231,29 @@
     return`<button type="button" class="cycle-rising-row" data-cycle-address="${esc(address)}" aria-haspopup="dialog" aria-label="Abrir análisis completo de ${esc(symbol)}"><span>${index+1}</span><div><b>${esc(symbol)}</b><small>${esc(stageLabel(signal.cycleStage))}</small></div><strong>${esc(directionLabel(signal.cycleDirection))}</strong><em>24h ${esc(delta(signal.cycleDelta24h))}</em><i class="cycle-open-arrow" aria-hidden="true">›</i></button>`;
   }
 
+  function rankingRow(signal,index){
+    const address=String(signal.tokenAddress||'').toLowerCase();
+    const reasons=(signal.cycleReasons||[]).map(reasonLabel);
+    const risks=(signal.cycleRisks||[]).map(riskLabel);
+    const missing=(signal.cycleMissingData||[]).map(missingLabel);
+    const drivers=topDrivers(signal).filter(row=>row.value>0&&!(row.label==='Safety'&&signal.safety?.status!=='PASS'));
+    const support=reasons[0]||drivers.map(row=>`${row.label} ${fmt(row.value)}/100`).join(' · ')||'Todavía construyendo evidencia';
+    const brake=risks[0]||missing[0]||'Sin freno dominante medido';
+    return`<tr>
+      <td class="cycle-ranking-position">${index+1}</td>
+      <td><button type="button" class="cycle-ranking-open" data-cycle-address="${esc(address)}" aria-haspopup="dialog" aria-label="Abrir análisis completo de ${esc(signal.symbol||'TOKEN')}"><b>${esc(signal.symbol||'TOKEN')}</b><small>${esc(stageIcon(signal.cycleStage))} ${esc(stageLabel(signal.cycleStage))}</small><i aria-hidden="true">›</i></button></td>
+      <td><strong>${esc(likelihoodLabel(signal.cycleStage))}</strong><small>Cycle ${esc(Math.round(Number(signal.cyclePotential||0)))}/100 · confianza ${esc(pct(signal.cycleConfidence))}</small></td>
+      <td class="cycle-ranking-copy">${esc(support)}</td>
+      <td class="cycle-ranking-copy cycle-ranking-brake">${esc(brake)}</td>
+      <td><span class="cycle-entry ${toneForEntry(signal.state)}">${esc(entryLabel(signal.state))}</span></td>
+    </tr>`;
+  }
+
+  function rankingDate(value){
+    const time=Date.parse(value||'');
+    return Number.isFinite(time)?`Actualizado ${new Intl.DateTimeFormat('es-ES',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(time))}`:'Actualización pendiente';
+  }
+
   const cycleSignals=new Map();
   let lastTrigger=null;
 
@@ -256,18 +280,18 @@
     const signals=(data.cycleMemes||[]).filter(signal=>knownNumber(signal.cyclePotential)).sort((a,b)=>Number(b.cyclePotential||0)-Number(a.cyclePotential||0)||Number(b.cycleConfidence||0)-Number(a.cycleConfidence||0));
     cycleSignals.clear();
     signals.forEach(signal=>cycleSignals.set(String(signal.tokenAddress||'').toLowerCase(),signal));
-    const ranked=signals.slice(0,10);
-    const rankedAddresses=new Set(ranked.map(x=>x.tokenAddress));
-    const pinnedOutside=signals.filter(x=>x.cyclePinned&&!rankedAddresses.has(x.tokenAddress));
-    const visible=[...ranked,...pinnedOutside];
+    const cohort=signals.filter(signal=>signal.cycleCohort||signal.cyclePinned).slice(0,8);
+    const visible=signals.filter(signal=>!(signal.cycleCohort||signal.cyclePinned)).slice(0,6);
     const rising=[...signals]
       .filter(signal=>['RISING_FAST','RISING'].includes(signal.cycleDirection)&&Number(signal.cycleDelta24h??signal.cycleDelta6h)>0)
       .sort((a,b)=>Number(b.cycleDelta24h??b.cycleDelta6h??0)-Number(a.cycleDelta24h??a.cycleDelta6h??0))
       .slice(0,5);
-    const count=$('#cycleCount'),grid=$('#cycleMemes'),risingBox=$('#cycleRising'),risingWrap=$('#cycleRisingWrap');
+    const count=$('#cycleCount'),grid=$('#cycleMemes'),otherWrap=$('#cycleOtherWrap'),ranking=$('#cycleRanking'),rankingDateNode=$('#cycleRankingDate'),risingBox=$('#cycleRising'),risingWrap=$('#cycleRisingWrap');
     if(count)count.textContent=signals.length;
-    if(grid)grid.innerHTML=visible.length?visible.map(signal=>card(signal,rankedAddresses.has(signal.tokenAddress)?`#${signals.findIndex(x=>x.tokenAddress===signal.tokenAddress)+1}`:'★')).join(''):
-      '<div class="empty cycle-empty"><b>Aún no hay candidatos calificables</b><span>El Cycle Radar conserva candidatos por contrato y acumula evidencia aunque no exista una entrada reciente.</span></div>';
+    if(ranking)ranking.innerHTML=cohort.length?cohort.map(rankingRow).join(''):'<tr><td colspan="6">La cohorte todavía no está disponible.</td></tr>';
+    if(rankingDateNode)rankingDateNode.textContent=rankingDate(data.generatedAt);
+    if(otherWrap)otherWrap.hidden=!visible.length;
+    if(grid)grid.innerHTML=visible.map((signal,index)=>card(signal,`#${index+1}`)).join('');
     if(risingWrap)risingWrap.hidden=!rising.length;
     if(risingBox)risingBox.innerHTML=rising.map(risingRow).join('');
     const dialog=$('#cycleDetailDialog');
@@ -288,6 +312,8 @@
     }catch(error){
       const grid=$('#cycleMemes');
       if(grid)grid.innerHTML=`<div class="empty"><b>Cycle Radar sin lectura fiable</b><span>${esc(error.message)}</span></div>`;
+      const ranking=$('#cycleRanking');
+      if(ranking)ranking.innerHTML=`<tr><td colspan="6">Ranking no disponible: ${esc(error.message)}</td></tr>`;
     }
   }
 
@@ -298,13 +324,16 @@
   }
   document.addEventListener('trenches:viewchange',event=>setActive(event.detail?.view==='discover'));
   const risingBox=$('#cycleRising');
+  const rankingBox=$('#cycleRanking');
   const dialog=$('#cycleDetailDialog');
-  risingBox?.addEventListener('click',event=>{
+  const handleOpen=event=>{
     const button=event.target.closest('[data-cycle-address]');
     if(!button)return;
     if(dialog)dialog.dataset.activeAddress=button.dataset.cycleAddress||'';
     openCycleDetail(button.dataset.cycleAddress,button);
-  });
+  };
+  risingBox?.addEventListener('click',handleOpen);
+  rankingBox?.addEventListener('click',handleOpen);
   dialog?.addEventListener('click',event=>{
     if(event.target===dialog||event.target.closest('[data-cycle-close]'))closeDetail();
   });

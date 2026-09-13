@@ -14,6 +14,7 @@ test('cycle universe always retains exact seeded contracts even without 24h even
   const addresses=new Set(universe.map(x=>x.tokenAddress));
   assert.ok(addresses.has(MICRO));
   assert.ok(addresses.has(FRONG));
+  assert.equal(addresses.size,8);
 });
 
 test('cycle universe keeps 30d cultural history while tactical 24h can be empty',()=>{
@@ -31,7 +32,8 @@ test('events older than cycle window do not resurrect arbitrary tokens',()=>{
 });
 
 test('cycle seeds use exact distinct valid contracts',()=>{
-  assert.equal(CYCLE_SEEDS.length,2);
-  assert.equal(new Set(CYCLE_SEEDS.map(x=>x.tokenAddress)).size,2);
+  assert.equal(CYCLE_SEEDS.length,8);
+  assert.equal(new Set(CYCLE_SEEDS.map(x=>x.tokenAddress)).size,8);
   assert.ok(CYCLE_SEEDS.every(x=>/^0x[a-f0-9]{40}$/.test(x.tokenAddress)));
+  assert.ok(CYCLE_SEEDS.every(x=>x.reason==='cycle-thesis-cohort'));
 });

@@ -33,6 +33,10 @@ test('every rising Cycle coin opens an accessible evidence-backed explanation',(
   assert.match(html,/<dialog id="cycleDetailDialog"[^>]*aria-labelledby="cycleDetailTitle"/);
   assert.match(html,/data-cycle-close aria-label="Cerrar análisis"/);
   assert.match(js,/<button type="button" class="cycle-rising-row"/);
+  assert.match(html,/id="cycleRanking"/);
+  assert.match(js,/class="cycle-ranking-open"/);
+  assert.match(js,/rankingBox\?\.addEventListener\('click',handleOpen\)/);
+  assert.match(html,/Pertenecer a la cohorte no añade puntos/);
   assert.match(js,/data-cycle-address=/);
   assert.match(js,/openCycleDetail\(button\.dataset\.cycleAddress/);
   for(const section of ['POR QUÉ ESTÁ SUBIENDO','QUÉ MIDE EL SCORE','EVIDENCIA OBSERVADA','RIESGOS, FALTANTES E INVALIDACIÓN','LECTURA DE ENTRADA'])assert.match(js,new RegExp(section));

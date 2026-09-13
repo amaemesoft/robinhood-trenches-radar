@@ -11,11 +11,13 @@ const now=Date.parse('2026-09-08T00:00:00Z');
 
 function dbBase(){return{events:[],tokenState:{},marketHistory:{},holderHistory:{},holderSnapshotStatus:{},moneyHoldingsStatus:{},cycleScoreHistory:{}};}
 
-test('MICRODUCK and FRONG remain on Cycle board with zero tactical events',()=>{
+test('the eight-token thesis cohort remains on Cycle board with zero tactical events',()=>{
   const board=buildCycleBoard({db:dbBase(),actors:{},cycleRuntime:new CycleRuntime({}),tacticalSignals:[],now});
   const addresses=new Set(board.map(x=>x.tokenAddress));
   assert.ok(addresses.has(MICRO));
   assert.ok(addresses.has(FRONG));
+  assert.equal(board.filter(x=>x.cycleCohort).length,8);
+  assert.equal(new Set(board.map(x=>x.cyclePotential)).size,1,'cohort membership must not add a token-specific score prior');
   assert.equal(board.find(x=>x.tokenAddress===MICRO).state,'NO_RECENT_SIGNAL');
   assert.equal(board.find(x=>x.tokenAddress===FRONG).cyclePinned,true);
 });
