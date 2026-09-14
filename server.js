@@ -17,6 +17,7 @@ const CycleBoard=require('./lib/cycleBoard');
 const CycleUniverse=require('./lib/cycleUniverse');
 const {HolderSnapshotProvider}=require('./lib/holderSnapshot');
 const {MoneyHoldingsProvider}=require('./lib/moneyHoldings');
+const WalletAccount=require('./lib/walletAccount');
 
 const PORT=Number(process.env.PORT||8787);
 const DATABASE_URL=process.env.DATABASE_URL||'';
@@ -47,9 +48,20 @@ let cycleRefreshRunning=false;
 let liveSubscriber=null;
 let cycleTimer=null;
 let liveQueue=Promise.resolve();
+const walletAccountCache=new Map();
 
 function alchemyWebhookConfigured(){return !!ALCHEMY_WEBHOOK_ID&&!!ALCHEMY_WEBHOOK_SIGNING_KEY;}
 function currentProvider(){return alchemyWebhookConfigured()?'alchemy-webhook':scanner.hasPro()?'blockscout-pro':'awaiting-provider-credentials';}
+async function walletAccount(address){
+  const normalized=WalletAccount.normalizeAddress(address);
+  if(!normalized)return null;
+  const cached=walletAccountCache.get(normalized);
+  if(cached&&Date.now()-cached.at<15000)return cached.value;
+  const value=await WalletAccount.readWalletAccount({rpc:(method,params)=>scanner.rpc(method,params),address:normalized});
+  walletAccountCache.set(normalized,{at:Date.now(),value});
+  if(walletAccountCache.size>250)walletAccountCache.delete(walletAccountCache.keys().next().value);
+  return value;
+}
 
 const seedActors=[
 {id:'unipcs',handle:'unipcs',xHandle:'@theunipcs',kind:'money',role:'confirmation',identityConfidence:'verified',evmAddress:'0x0a6ebed0155edb4b21d92ad02897a626cd90119e',copyability:68,roleScores:{discovery:62,confirmation:91,execution:82}},
@@ -323,6 +335,13 @@ function startLiveSubscriber(){
 
 const server=http.createServer(async(req,res)=>{const u=new URL(req.url,`http://${req.headers.host||'localhost'}`),p=u.pathname;try{
 if(p==='/api/health'){if(storage.pool)await storage.pool.query('SELECT 1');return json(res,200,{ok:true,databaseConnected:!!storage.pool,commit:process.env.RAILWAY_GIT_COMMIT_SHA||null,deploymentId:process.env.RAILWAY_DEPLOYMENT_ID||null,shadowMode:'SHADOW',execution:'PAPER_ONLY',version:10,cycleVersion:3,storage:DATABASE_URL?'postgres':'file',chainId:4663,provider:currentProvider(),webhook:alchemyWebhookConfigured()?'configured':'disabled',backfill:db?.sync?.alchemyBackfill?.status||'pending',cycleLastRefresh:db?.sync?.cycle?.lastRefreshAt||null,calibration:calibration().status,ws:db?.sync?.ws?.state||'disabled',time:new Date().toISOString()});}
+if(p==='/api/wallet/balance'&&req.method!=='GET')return json(res,405,{error:'read-only endpoint'});
+if(p==='/api/wallet/balance'&&req.method==='GET'){
+  const address=u.searchParams.get('address');
+  if(!WalletAccount.normalizeAddress(address))return json(res,400,{error:'valid EVM address required'});
+  try{return json(res,200,{ok:true,...await walletAccount(address)});}
+  catch(error){const reason=['WRONG_CHAIN','INVALID_RPC_RESPONSE'].includes(error.code)?error.code:'RPC_ERROR';return json(res,502,{error:'Robinhood Chain balance unavailable',reason});}
+}
 if(p.startsWith('/api/autopilot')&&req.method!=='GET')return json(res,405,{error:'PAPER_ONLY: read-only API'});
 if(p==='/api/autopilot'&&req.method==='GET'){if(!shadowRuntime?.store)return json(res,503,{mode:'SHADOW',execution:'PAPER_ONLY',error:'starting'});return json(res,200,await shadowRuntime.snapshot());}
 if(p==='/api/autopilot/history'&&req.method==='GET')return json(res,200,{mode:'SHADOW',execution:'PAPER_ONLY',rows:await shadowRuntime.store.history(u.searchParams.get('kind'),Math.min(200,Math.max(1,Number(u.searchParams.get('limit'))||50)),Math.max(0,Number(u.searchParams.get('offset'))||0))});

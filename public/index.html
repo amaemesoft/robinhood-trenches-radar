@@ -154,7 +154,7 @@
             <div><span class="eyebrow">CUENTA OPERATIVA</span><h2 id="walletTitle">Phantom · Robinhood Chain</h2></div>
             <span id="walletMode" class="wallet-mode">SIN PERMISO DE TRADING</span>
           </div>
-          <p class="section-copy wallet-copy">Conecta Phantom para verificar la cuenta y su gas en Robinhood Chain. Esta fase sólo lee datos locales de la wallet: no firma, no envía transacciones y nunca solicita tu seed phrase o clave privada.</p>
+          <p class="section-copy wallet-copy">Conecta Phantom para verificar la cuenta y su gas en Robinhood Chain. Si Phantom no aparece, puedes cargar la dirección pública en modo solo lectura. Ninguna de las dos rutas firma ni envía transacciones.</p>
           <div id="walletStatus" class="wallet-status" role="status" aria-live="polite">
             <div><span>ESTADO</span><b id="walletState">No conectada</b></div>
             <div><span>RED</span><b id="walletNetwork">Robinhood Chain · 4663</b></div>
@@ -163,8 +163,17 @@
           </div>
           <div class="wallet-actions">
             <button type="button" id="walletConnect">Conectar Phantom</button>
+            <a id="walletOpenExternal" href="/" target="_blank" rel="noopener noreferrer">Abrir fuera del visor</a>
             <a href="https://help.phantom.com/articles/robinhood-chain-faq-53628774801683" target="_blank" rel="noopener noreferrer">Activar Robinhood Chain</a>
           </div>
+          <form id="walletWatchForm" class="wallet-watch">
+            <label for="walletWatchAddress">O consulta tu dirección pública</label>
+            <div>
+              <input id="walletWatchAddress" name="address" type="text" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="0x…" aria-describedby="walletWatchHelp">
+              <button id="walletWatch" type="submit">Ver cuenta</button>
+            </div>
+            <small id="walletWatchHelp">Solo consulta saldo en Robinhood Chain. La dirección se guarda únicamente en este navegador; no concede permisos ni sustituye la conexión de Phantom.</small>
+          </form>
           <p id="walletNotice" class="wallet-notice">La futura autonomía usará permisos revocables y limitados; la clave maestra de Phantom no se almacenará en Trenches.</p>
         </section>
 
@@ -208,6 +217,6 @@
   <script src="/tokenNames.js?v=20260908b"></script>
   <script src="/autopilot.js?v=20260911a"></script>
   <script src="/cycle.js?v=20260913a"></script>
-  <script src="/wallet.js?v=20260914a"></script>
+  <script src="/wallet.js?v=20260914b"></script>
 </body>
 </html>

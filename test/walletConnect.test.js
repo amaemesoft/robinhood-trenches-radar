@@ -80,3 +80,58 @@ test('opening Desk performs a silent account check and never prompts Phantom',as
   assert.deepEqual(calls.map(call=>call.method),['eth_accounts']);
   assert.equal(nodes['#walletState'].textContent,'No conectada');
 });
+
+test('public address fallback reads the account without requesting a wallet signature',async()=>{
+  const address='0xA1B2c3D4e5F60718293a4B5c6D7E8f9012345678';
+  const fetchCalls=[];
+  const saved=[];
+  const nodes={
+    '#walletStatus':element(),'#walletConnect':element(),'#walletMode':element(),'#walletState':element(),
+    '#walletAddress':element(),'#walletNetwork':element(),'#walletBalance':element(),'#walletNotice':element(),
+    '#walletWatchForm':element(),'#walletWatchAddress':element({value:address}),'#walletWatch':element(),
+    '[data-view-panel="desk"]':element({hidden:true})
+  };
+  const document={querySelector:selector=>nodes[selector]||null,addEventListener(){}};
+  const sandbox={
+    window:{localStorage:{getItem(){return null;},setItem(key,value){saved.push({key,value});}}},
+    document,Number,String,BigInt,Promise,
+    fetch:async(url,options)=>{
+      fetchCalls.push({url,options});
+      return{ok:true,status:200,json:async()=>({ok:true,address:address.toLowerCase(),chainId:4663,balance:'0xde0b6b3a7640000',mode:'WATCH_ONLY'})};
+    }
+  };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'..','public','wallet.js'),'utf8'),sandbox);
+
+  nodes['#walletWatchForm'].listeners.submit({preventDefault(){}});
+  await flush();
+
+  assert.equal(fetchCalls.length,1);
+  assert.match(fetchCalls[0].url,/^\/api\/wallet\/balance\?address=/);
+  assert.equal(fetchCalls[0].options.cache,'no-store');
+  assert.equal(nodes['#walletState'].textContent,'Solo lectura');
+  assert.equal(nodes['#walletMode'].textContent,'SOLO LECTURA · SIN FIRMA');
+  assert.equal(nodes['#walletAddress'].textContent,'0xa1b2…5678');
+  assert.equal(nodes['#walletBalance'].textContent,'1 ETH');
+  assert.match(nodes['#walletNotice'].textContent,/no permite firmar, comprar, vender ni mover fondos/i);
+  assert.deepEqual(saved,[{key:'trenches:watchAddress',value:address.toLowerCase()}]);
+});
+
+test('legacy multi-provider injection selects Phantom instead of another EVM wallet',async()=>{
+  const calls=[];
+  const other={isPhantom:false,async request(){throw new Error('wrong provider');}};
+  const phantom={isPhantom:true,async request(payload){calls.push(payload.method);if(payload.method==='eth_requestAccounts')return['0x1111111111111111111111111111111111111111'];if(payload.method==='eth_chainId')return'0x1237';if(payload.method==='eth_getBalance')return'0x0';},on(){}};
+  const nodes={
+    '#walletStatus':element(),'#walletConnect':element(),'#walletState':element(),'#walletAddress':element(),
+    '#walletNetwork':element(),'#walletBalance':element(),'#walletNotice':element(),
+    '[data-view-panel="desk"]':element({hidden:true})
+  };
+  const document={querySelector:selector=>nodes[selector]||null,addEventListener(){}};
+  const sandbox={window:{ethereum:{providers:[other,phantom]}},document,Number,String,BigInt,Promise};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'..','public','wallet.js'),'utf8'),sandbox);
+
+  nodes['#walletConnect'].listeners.click();
+  await flush();
+
+  assert.equal(nodes['#walletState'].textContent,'Conectada');
+  assert.deepEqual(calls,['eth_requestAccounts','eth_chainId','eth_chainId','eth_getBalance']);
+});

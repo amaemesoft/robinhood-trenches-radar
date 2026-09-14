@@ -28,7 +28,12 @@ test('the desk exposes Phantom connection without claiming live execution',()=>{
   assert.match(html,/Phantom · Robinhood Chain/);
   assert.match(html,/SIN PERMISO DE TRADING/);
   assert.match(html,/id="walletConnect"/);
+  assert.match(html,/id="walletWatchForm"/);
+  assert.match(html,/id="walletWatchAddress"/);
+  assert.match(html,/Abrir fuera del visor/);
   assert.match(js,/window\.phantom\?\.ethereum/);
+  assert.match(js,/eip6963:announceProvider/);
+  assert.match(js,/\/api\/wallet\/balance\?address=/);
   assert.match(js,/CHAIN_ID_DECIMAL=4663/);
   assert.match(js,/wallet_switchEthereumChain/);
   assert.doesNotMatch(js,/eth_sendTransaction|sendTransaction|personal_sign|eth_signTransaction/);
