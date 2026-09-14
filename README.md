@@ -147,3 +147,16 @@ Esta variante incorpora persistencia Postgres y separación `app ↔ worker` par
 - Iconos PWA incluidos para una instalación fiable en Android.
 
 La app sigue siendo **read-only respecto a wallets** y nunca necesita claves privadas.
+
+## Phantom en Robinhood Chain
+
+La vista `DESK` incorpora una conexión local con el proveedor EVM inyectado de Phantom:
+
+- solicita acceso únicamente cuando el usuario pulsa `Conectar Phantom`;
+- exige Robinhood Chain (`chainId 4663` / `0x1237`);
+- muestra la dirección EVM y el balance de RH ETH disponible para gas;
+- no transmite la dirección al backend;
+- no firma mensajes, no crea approvals y no envía transacciones;
+- nunca solicita seed phrase ni private key.
+
+Esta conexión representa `CONNECTED_READ_ONLY`, no ejecución real. La evolución prevista está documentada en [`docs/live-execution-boundary.md`](docs/live-execution-boundary.md).

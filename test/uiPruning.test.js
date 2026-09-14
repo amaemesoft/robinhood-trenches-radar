@@ -21,6 +21,20 @@ test('the desk compresses internal agents into five user-facing gates',()=>{
   assert.match(js,/clearInterval\(refreshTimer\)/);
 });
 
+test('the desk exposes Phantom connection without claiming live execution',()=>{
+  const html=read('index.html');
+  const js=read('wallet.js');
+  assert.match(html,/id="executionWallet"/);
+  assert.match(html,/Phantom · Robinhood Chain/);
+  assert.match(html,/SIN PERMISO DE TRADING/);
+  assert.match(html,/id="walletConnect"/);
+  assert.match(js,/window\.phantom\?\.ethereum/);
+  assert.match(js,/CHAIN_ID_DECIMAL=4663/);
+  assert.match(js,/wallet_switchEthereumChain/);
+  assert.doesNotMatch(js,/eth_sendTransaction|sendTransaction|personal_sign|eth_signTransaction/);
+  assert.match(js,/nunca te pedirá la seed phrase/i);
+});
+
 test('cycle and desk endpoints load lazily only after their view opens',()=>{
   assert.match(read('cycle.js'),/event\.detail\?\.view==='discover'/);
   assert.match(read('autopilot.js'),/event\.detail\?\.view==='desk'/);

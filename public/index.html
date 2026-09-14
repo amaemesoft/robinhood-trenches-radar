@@ -7,7 +7,7 @@
   <title>Trenches Radar</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg">
-  <link rel="stylesheet" href="/styles.css?v=20260912a">
+  <link rel="stylesheet" href="/styles.css?v=20260914a">
   <link rel="stylesheet" href="/cycle.css?v=20260913a">
   <link rel="stylesheet" href="/autopilot.css?v=20260911a">
 </head>
@@ -149,6 +149,25 @@
       </section>
 
       <section class="view-panel" data-view-panel="desk" id="desk" hidden>
+        <section class="wallet-section" id="executionWallet" aria-labelledby="walletTitle">
+          <div class="wallet-head">
+            <div><span class="eyebrow">CUENTA OPERATIVA</span><h2 id="walletTitle">Phantom · Robinhood Chain</h2></div>
+            <span id="walletMode" class="wallet-mode">SIN PERMISO DE TRADING</span>
+          </div>
+          <p class="section-copy wallet-copy">Conecta Phantom para verificar la cuenta y su gas en Robinhood Chain. Esta fase sólo lee datos locales de la wallet: no firma, no envía transacciones y nunca solicita tu seed phrase o clave privada.</p>
+          <div id="walletStatus" class="wallet-status" role="status" aria-live="polite">
+            <div><span>ESTADO</span><b id="walletState">No conectada</b></div>
+            <div><span>RED</span><b id="walletNetwork">Robinhood Chain · 4663</b></div>
+            <div><span>CUENTA</span><b id="walletAddress">—</b></div>
+            <div><span>RH ETH PARA GAS</span><b id="walletBalance">—</b></div>
+          </div>
+          <div class="wallet-actions">
+            <button type="button" id="walletConnect">Conectar Phantom</button>
+            <a href="https://help.phantom.com/articles/robinhood-chain-faq-53628774801683" target="_blank" rel="noopener noreferrer">Activar Robinhood Chain</a>
+          </div>
+          <p id="walletNotice" class="wallet-notice">La futura autonomía usará permisos revocables y limitados; la clave maestra de Phantom no se almacenará en Trenches.</p>
+        </section>
+
         <section class="autopilot-section" id="autopilot">
           <div class="autopilot-head">
             <div><span class="eyebrow">LABORATORIO · SHADOW MODE</span><h2>Trenches Desk</h2></div>
@@ -189,5 +208,6 @@
   <script src="/tokenNames.js?v=20260908b"></script>
   <script src="/autopilot.js?v=20260911a"></script>
   <script src="/cycle.js?v=20260913a"></script>
+  <script src="/wallet.js?v=20260914a"></script>
 </body>
 </html>

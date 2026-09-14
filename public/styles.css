@@ -122,5 +122,24 @@ body.is-live .live-pill i{background:var(--green);box-shadow:0 0 12px #58f18b66}
 .legend b{color:#d4ded7}
 .generated{text-align:center;color:#566259;font-size:8px;margin:18px 0 0}
 .methodology-fold{margin-top:14px}
+.wallet-section{margin-top:0;border:1px solid #36553e;background:linear-gradient(155deg,#13261a,#0b120e 72%);border-radius:22px;padding:16px}
+.wallet-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.wallet-head h2{font-size:20px;letter-spacing:-.35px;margin:4px 0 0}
+.wallet-mode{font-size:9px;font-weight:900;letter-spacing:.55px;color:var(--amber);border:1px solid #66552b;background:#211b0c;border-radius:999px;padding:6px 8px;white-space:nowrap}
+.wallet-copy{margin-top:10px}
+.wallet-status{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:13px}
+.wallet-status>div{min-width:0;border:1px solid #24372a;background:#0b130e;border-radius:12px;padding:10px}
+.wallet-status span,.wallet-status b{display:block}
+.wallet-status span{font-size:8px;color:var(--muted);margin-bottom:5px}
+.wallet-status b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wallet-status.is-connected>div:first-child{border-color:#315f3d}.wallet-status.is-connected>div:first-child b{color:var(--green)}
+.wallet-status.is-error>div:first-child{border-color:#68343c}.wallet-status.is-error>div:first-child b{color:var(--red)}
+.wallet-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px}
+.wallet-actions button{appearance:none;border:1px solid #3b7a4c;background:#173d24;color:#dcffe7;border-radius:12px;min-height:44px;padding:10px 14px;font:inherit;font-size:11px;font-weight:800;cursor:pointer}
+.wallet-actions button:hover,.wallet-actions button:focus-visible{border-color:var(--green);outline:none}
+.wallet-actions button:disabled{opacity:.5;cursor:wait}
+.wallet-actions a{color:#9fb1a5;font-size:10px}
+.wallet-notice{margin:11px 1px 0;font-size:9px;line-height:1.45;color:#718078}
 @media(max-width:380px){.metrics{grid-template-columns:1fr 1fr}.metrics div:first-child{grid-column:1/-1}.hero h2{font-size:26px}.decision-title{font-size:18px}}
+@media(max-width:440px){.wallet-head{display:block}.wallet-mode{display:inline-block;margin-top:10px}.wallet-status{grid-template-columns:1fr}.wallet-actions button{width:100%}}
 @media(min-width:560px){.evidence-row{grid-template-columns:repeat(4,1fr)}.metrics{grid-template-columns:repeat(3,1fr)}}
