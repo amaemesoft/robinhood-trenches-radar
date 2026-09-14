@@ -154,7 +154,7 @@
             <div><span class="eyebrow">CUENTA OPERATIVA</span><h2 id="walletTitle">Phantom · Robinhood Chain</h2></div>
             <span id="walletMode" class="wallet-mode">SIN PERMISO DE TRADING</span>
           </div>
-          <p class="section-copy wallet-copy">Conecta Phantom para verificar la cuenta y su gas en Robinhood Chain. Si Phantom no aparece, puedes cargar la dirección pública en modo solo lectura. Ninguna de las dos rutas firma ni envía transacciones.</p>
+          <p class="section-copy wallet-copy">Phantom conserva la propiedad. Trenches opera desde una cuenta inteligente separada con sólo 0,005 ETH, permisos temporales y límites duros. Nunca pegues aquí una seed phrase ni una clave privada.</p>
           <div id="walletStatus" class="wallet-status" role="status" aria-live="polite">
             <div><span>ESTADO</span><b id="walletState">No conectada</b></div>
             <div><span>RED</span><b id="walletNetwork">Robinhood Chain · 4663</b></div>
@@ -166,6 +166,43 @@
             <a id="walletOpenExternal" href="/" target="_blank" rel="noopener noreferrer">Abrir fuera del visor</a>
             <a href="https://help.phantom.com/articles/robinhood-chain-faq-53628774801683" target="_blank" rel="noopener noreferrer">Activar Robinhood Chain</a>
           </div>
+          <section class="live-setup" aria-labelledby="liveSetupTitle">
+            <div class="live-setup-head">
+              <div><span class="eyebrow">PILOTO REAL LIMITADO</span><h3 id="liveSetupTitle">Activación autónoma</h3></div>
+              <span id="liveEnginePill" class="live-engine-pill">NO ARMADA</span>
+            </div>
+            <div class="live-limits" aria-label="Límites del piloto">
+              <span>Fondo <b>0,005 ETH</b></span><span>Entrada máx. <b>0,001 ETH</b></span><span>Stop diario <b>−0,0015 ETH</b></span><span>Posiciones <b>1</b></span>
+            </div>
+            <ol class="live-steps">
+              <li><span>1</span><div><b>Separar</b><small>Crear y fondear la cuenta operativa.</small></div></li>
+              <li><span>2</span><div><b>Limitar</b><small>Autorizar una sesión de 7 días desde Phantom.</small></div></li>
+              <li><span>3</span><div><b>Probar</b><small>Confirmar una operación técnica de valor cero.</small></div></li>
+              <li><span>4</span><div><b>Armar</b><small>Esperar un ENTRY que supere todos los gates.</small></div></li>
+            </ol>
+            <div class="live-status-grid" role="status" aria-live="polite">
+              <div><span>CUENTA SEPARADA</span><b id="liveAccount">Sin crear</b></div>
+              <div><span>SALDO OPERATIVO</span><b id="liveBalance">—</b></div>
+              <div><span>SESIÓN</span><b id="liveSession">Sin autorizar</b></div>
+              <div><span>PRUEBA IDA/VUELTA</span><b id="liveRoundTrip">Pendiente</b></div>
+              <div><span>POSICIONES REALES</span><b id="livePositions">0</b></div>
+              <div><span>SEÑAL VÁLIDA AHORA</span><b id="liveSignal">No</b></div>
+            </div>
+            <div class="live-controls">
+              <button type="button" id="liveCreate">1 · Crear cuenta</button>
+              <button type="button" id="liveFund">2 · Fondear 0,005 ETH</button>
+              <button type="button" id="liveAuthorize">3 · Autorizar 7 días</button>
+              <button type="button" id="liveTest">4 · Probar sesión</button>
+            </div>
+            <label class="live-consent"><input id="liveConsent" type="checkbox"> Entiendo que es un piloto con dinero real, que puede perderlo y que no garantiza beneficios.</label>
+            <div class="live-arm-row">
+              <button type="button" id="liveArm" class="live-arm">ARMAR AUTONOMÍA LIMITADA</button>
+              <button type="button" id="liveStop" class="live-stop">PARAR Y LIQUIDAR</button>
+            </div>
+            <button type="button" id="liveReclaim" class="live-reclaim">RETIRAR FONDOS/TOKENS A PHANTOM</button>
+            <button type="button" id="liveReclaimNative" class="live-reclaim live-reclaim-emergency">EMERGENCIA · RETIRAR SOLO ETH/WETH</button>
+            <p id="liveNotice" class="live-notice">Conecta Phantom para iniciar. Cada paso sensible muestra una firma o transacción explícita en la wallet.</p>
+          </section>
           <form id="walletWatchForm" class="wallet-watch">
             <label for="walletWatchAddress">O consulta tu dirección pública</label>
             <div>
@@ -174,7 +211,7 @@
             </div>
             <small id="walletWatchHelp">Solo consulta saldo en Robinhood Chain. La dirección se guarda únicamente en este navegador; no concede permisos ni sustituye la conexión de Phantom.</small>
           </form>
-          <p id="walletNotice" class="wallet-notice">La futura autonomía usará permisos revocables y limitados; la clave maestra de Phantom no se almacenará en Trenches.</p>
+          <p id="walletNotice" class="wallet-notice">La dirección pública sólo permite consultar. Para operar debes conectar la misma cuenta en Phantom y completar la activación limitada.</p>
         </section>
 
         <section class="autopilot-section" id="autopilot">
@@ -217,6 +254,6 @@
   <script src="/tokenNames.js?v=20260908b"></script>
   <script src="/autopilot.js?v=20260911a"></script>
   <script src="/cycle.js?v=20260913a"></script>
-  <script src="/wallet.js?v=20260914b"></script>
+  <script src="/wallet.js?v=20260914c"></script>
 </body>
 </html>

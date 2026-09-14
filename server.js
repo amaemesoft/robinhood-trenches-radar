@@ -18,6 +18,9 @@ const CycleUniverse=require('./lib/cycleUniverse');
 const {HolderSnapshotProvider}=require('./lib/holderSnapshot');
 const {MoneyHoldingsProvider}=require('./lib/moneyHoldings');
 const WalletAccount=require('./lib/walletAccount');
+const {LivePolicy}=require('./lib/livePolicy');
+const {AlchemyWallet}=require('./lib/alchemyWallet');
+const LiveRuntime=require('./lib/liveRuntime');
 
 const PORT=Number(process.env.PORT||8787);
 const DATABASE_URL=process.env.DATABASE_URL||'';
@@ -28,6 +31,9 @@ const RH_WSS_URL=process.env.RH_WSS_URL||'';
 const BLOCKSCOUT_API_KEY=process.env.BLOCKSCOUT_API_KEY||'';
 const ALCHEMY_WEBHOOK_ID=process.env.ALCHEMY_WEBHOOK_ID||'';
 const ALCHEMY_WEBHOOK_SIGNING_KEY=process.env.ALCHEMY_WEBHOOK_SIGNING_KEY||'';
+const ALCHEMY_WALLET_API_KEY=process.env.ALCHEMY_WALLET_API_KEY||'';
+const LIVE_SESSION_PRIVATE_KEY=process.env.LIVE_SESSION_PRIVATE_KEY||'';
+const ALCHEMY_GAS_POLICY_ID=process.env.ALCHEMY_GAS_POLICY_ID||'';
 const BACKFILL_BLOCKS=Number(process.env.BACKFILL_BLOCKS||1200);
 const MAX_BLOCK_RANGE=Number(process.env.MAX_BLOCK_RANGE||500);
 const ALCHEMY_BACKFILL_BLOCKS=Number(process.env.ALCHEMY_BACKFILL_BLOCKS||604800);
@@ -41,8 +47,11 @@ const intelligence=new TokenIntelligence({rpc:scanner.rpc.bind(scanner),targetsU
 const holderProvider=new HolderSnapshotProvider();
 const holdingsProvider=new MoneyHoldingsProvider({rpc:scanner.rpc.bind(scanner),concurrency:5});
 const cycleRuntime=new CycleRuntime({holderProvider,holdingsProvider,snapshotIntervalMs:60*60*1000,holdingsIntervalMs:2*60*60*1000});
+const livePolicy=new LivePolicy();
+const liveWallet=new AlchemyWallet({apiKey:ALCHEMY_WALLET_API_KEY,alchemyRpcUrl:RH_RPC_URL,sessionPrivateKey:LIVE_SESSION_PRIVATE_KEY,paymasterPolicyId:ALCHEMY_GAS_POLICY_ID});
 let db;
 let shadowRuntime;
+let liveRuntime;
 let syncRunning=false;
 let cycleRefreshRunning=false;
 let liveSubscriber=null;
@@ -114,6 +123,16 @@ const json=(res,status,body)=>{res.writeHead(status,{'content-type':'application
 const auth=(req,token)=>!!token&&req.headers.authorization===`Bearer ${token}`;
 function rawBody(req){return new Promise((resolve,reject)=>{let s='';req.on('data',c=>{s+=c;if(s.length>1e6)reject(new Error('body too large'))});req.on('end',()=>resolve(s));req.on('error',reject)})}
 function body(req){return rawBody(req).then(s=>{try{return s?JSON.parse(s):{}}catch(e){throw e}})}
+function requireJson(req){if(!/^application\/json(?:;|$)/i.test(String(req.headers['content-type']||'')))throw Object.assign(new Error('application/json required'),{code:'JSON_REQUIRED'});}
+function liveErrorStatus(error){
+  if(['OWNER_PROOF_INVALID','INVALID_SESSION_SIGNATURE','INVALID_RECLAIM_SIGNATURE'].includes(error.code))return 401;
+  if(['OWNER_NOT_AUTHORIZED','ACCOUNT_OWNER_LOCKED','OWNER_MISMATCH'].includes(error.code))return 403;
+  if(['INVALID_OWNER','INVALID_ACTION','INVALID_EXACT_CONTRACT','INVALID_RECLAIM_MODE','JSON_REQUIRED'].includes(error.code))return 400;
+  if(['ACCOUNT_NOT_READY','ACCOUNT_NOT_FUNDED','SESSION_MISMATCH','SESSION_NOT_AUTHORIZED','SESSION_NOT_TESTED','SESSION_EXPIRING','DAILY_LOSS_LIMIT','LIVE_EXECUTION_DISABLED','LIVE_RUNTIME_ARMED','LIVE_MANUAL_RECOVERY_REQUIRED','RECLAIM_MISMATCH','RECLAIM_BALANCE_TOO_LOW','RUNTIME_BUSY','PENDING_LIVE_ORDER'].includes(error.code))return 409;
+  if(['ALCHEMY_WALLET_API_UNAVAILABLE','SESSION_SIGNER_UNAVAILABLE','LIVE_INFRASTRUCTURE_UNAVAILABLE'].includes(error.code))return 503;
+  if(['ALCHEMY_WALLET_API_ERROR','BALANCE_RESPONSE_INVALID','LIVE_CHAIN_MISMATCH','LIVE_CONTRACT_MISSING','LIVE_CONTRACT_BINDING_MISMATCH'].includes(error.code))return 502;
+  return 500;
+}
 function staticFile(res,p){let rel=p==='/'?'index.html':p.replace(/^\//,'');rel=path.normalize(rel).replace(/^\.\.(\/|\\|$)/,'');const f=path.join(PUBLIC,rel);if(!f.startsWith(PUBLIC)||!fs.existsSync(f)||fs.statSync(f).isDirectory())return false;const ext=path.extname(f);const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.webmanifest':'application/manifest+json'};res.writeHead(200,{'content-type':types[ext]||'application/octet-stream','cache-control':ext==='.html'?'no-cache':'public,max-age=300'});fs.createReadStream(f).pipe(res);return true}
 function actorMap(){const out={};for(const a of db.actors){a.adaptiveScore=Engine.adaptiveActorScore(a);a.division=Engine.division(a.sampleSize||a.calls||0,a.kind);out[a.id]=a}return out}
 function moneyWalletMap(){return new Map(db.actors.filter(a=>a.kind==='money'&&a.enabled!==false&&/^0x[a-fA-F0-9]{40}$/.test(a.evmAddress||'')).map(a=>[a.evmAddress.toLowerCase(),a]));}
@@ -334,7 +353,12 @@ function startLiveSubscriber(){
 }
 
 const server=http.createServer(async(req,res)=>{const u=new URL(req.url,`http://${req.headers.host||'localhost'}`),p=u.pathname;try{
-if(p==='/api/health'){if(storage.pool)await storage.pool.query('SELECT 1');return json(res,200,{ok:true,databaseConnected:!!storage.pool,commit:process.env.RAILWAY_GIT_COMMIT_SHA||null,deploymentId:process.env.RAILWAY_DEPLOYMENT_ID||null,shadowMode:'SHADOW',execution:'PAPER_ONLY',version:10,cycleVersion:3,storage:DATABASE_URL?'postgres':'file',chainId:4663,provider:currentProvider(),webhook:alchemyWebhookConfigured()?'configured':'disabled',backfill:db?.sync?.alchemyBackfill?.status||'pending',cycleLastRefresh:db?.sync?.cycle?.lastRefreshAt||null,calibration:calibration().status,ws:db?.sync?.ws?.state||'disabled',time:new Date().toISOString()});}
+if(p==='/api/health'){
+  if(storage.pool)await storage.pool.query('SELECT 1');
+  const liveState=liveRuntime?.store?await liveRuntime.store.state():null;
+  const execution=liveState?.armed?(liveState.roundTripValidated?'AUTONOMOUS_LIMITED':'ROUND_TRIP_VALIDATION'):livePolicy.config.allowed?'LIVE_GATED_NOT_ARMED':'PAPER_ONLY';
+  return json(res,200,{ok:true,databaseConnected:!!storage.pool,commit:process.env.RAILWAY_GIT_COMMIT_SHA||null,deploymentId:process.env.RAILWAY_DEPLOYMENT_ID||null,shadowMode:'SHADOW',execution,liveConfigured:liveWallet.ready(),liveInfrastructure:liveRuntime?.infrastructure?.verified===true,liveState:liveState?.state||'STARTING',version:11,cycleVersion:3,storage:DATABASE_URL?'postgres':'file',chainId:4663,provider:currentProvider(),webhook:alchemyWebhookConfigured()?'configured':'disabled',backfill:db?.sync?.alchemyBackfill?.status||'pending',cycleLastRefresh:db?.sync?.cycle?.lastRefreshAt||null,calibration:calibration().status,ws:db?.sync?.ws?.state||'disabled',time:new Date().toISOString()});
+}
 if(p==='/api/wallet/balance'&&req.method!=='GET')return json(res,405,{error:'read-only endpoint'});
 if(p==='/api/wallet/balance'&&req.method==='GET'){
   const address=u.searchParams.get('address');
@@ -342,6 +366,24 @@ if(p==='/api/wallet/balance'&&req.method==='GET'){
   try{return json(res,200,{ok:true,...await walletAccount(address)});}
   catch(error){const reason=['WRONG_CHAIN','INVALID_RPC_RESPONSE'].includes(error.code)?error.code:'RPC_ERROR';return json(res,502,{error:'Robinhood Chain balance unavailable',reason});}
 }
+if(p.startsWith('/api/live/')&&!liveRuntime?.store)return json(res,503,{error:'live runtime starting',code:'LIVE_RUNTIME_STARTING'});
+if(p==='/api/live/status'&&req.method==='GET'){
+  const owner=u.searchParams.get('owner');
+  if(!WalletAccount.normalizeAddress(owner))return json(res,400,{error:'valid owner address required',code:'INVALID_OWNER'});
+  return json(res,200,await liveRuntime.status(owner));
+}
+if(p==='/api/live/challenge'&&req.method==='GET'){
+  return json(res,200,liveRuntime.challenge({address:u.searchParams.get('address'),action:u.searchParams.get('action'),host:req.headers.host||'Robinhood Trenches'}));
+}
+if(p==='/api/live/account/request'&&req.method==='POST'){requireJson(req);return json(res,200,await liveRuntime.requestAccount(await body(req)));}
+if(p==='/api/live/session/request'&&req.method==='POST'){requireJson(req);return json(res,200,await liveRuntime.requestSession(await body(req)));}
+if(p==='/api/live/session/authorize'&&req.method==='POST'){requireJson(req);return json(res,200,await liveRuntime.authorizeSession(await body(req)));}
+if(p==='/api/live/session/test'&&req.method==='POST'){requireJson(req);return json(res,200,await liveRuntime.testSession(await body(req)));}
+if(p==='/api/live/arm'&&req.method==='POST'){requireJson(req);return json(res,200,await liveRuntime.arm(await body(req)));}
+if(p==='/api/live/pause'&&req.method==='POST'){requireJson(req);return json(res,200,await liveRuntime.pause(await body(req)));}
+if(p==='/api/live/reclaim/request'&&req.method==='POST'){requireJson(req);return json(res,200,await liveRuntime.requestReclaim(await body(req)));}
+if(p==='/api/live/reclaim/authorize'&&req.method==='POST'){requireJson(req);return json(res,200,await liveRuntime.authorizeReclaim(await body(req)));}
+if(p.startsWith('/api/live/'))return json(res,405,{error:'unsupported live execution operation',code:'METHOD_NOT_ALLOWED'});
 if(p.startsWith('/api/autopilot')&&req.method!=='GET')return json(res,405,{error:'PAPER_ONLY: read-only API'});
 if(p==='/api/autopilot'&&req.method==='GET'){if(!shadowRuntime?.store)return json(res,503,{mode:'SHADOW',execution:'PAPER_ONLY',error:'starting'});return json(res,200,await shadowRuntime.snapshot());}
 if(p==='/api/autopilot/history'&&req.method==='GET')return json(res,200,{mode:'SHADOW',execution:'PAPER_ONLY',rows:await shadowRuntime.store.history(u.searchParams.get('kind'),Math.min(200,Math.max(1,Number(u.searchParams.get('limit'))||50)),Math.max(0,Number(u.searchParams.get('offset'))||0))});
@@ -363,7 +405,11 @@ if(p==='/api/events'&&req.method==='POST'){if(!auth(req,WRITE_API_TOKEN))return 
 if(p==='/api/token-state'&&req.method==='POST'){if(!auth(req,WRITE_API_TOKEN))return json(res,401,{error:'unauthorized'});const b=await body(req);if(!/^0x[a-fA-F0-9]{40}$/.test(b.tokenAddress||''))return json(res,400,{error:'exact tokenAddress required'});mergeTokenState(b.tokenAddress.toLowerCase(),b.state||{});save();queueCycleRefresh();return json(res,200,{ok:true})}
 if(p==='/api/actors/performance'&&req.method==='POST'){if(!auth(req,WRITE_API_TOKEN))return json(res,401,{error:'unauthorized'});const b=await body(req),a=db.actors.find(x=>x.id===b.actorId);if(!a)return json(res,404,{error:'actor not found'});for(const k of ['sampleSize','recentEdge','lifetimeEdge','copyability'])if(b[k]!=null)a[k]=Number(b[k]);if(b.roleScores)a.roleScores={...(a.roleScores||{}),...b.roleScores};save();queueCycleRefresh();return json(res,200,{ok:true})}
 if(staticFile(res,p))return;return json(res,404,{error:'not found'});
-}catch(e){if(db?.sync){db.sync.lastError=e.message;save();}return json(res,500,{error:e.message})}});
+}catch(e){
+  if(p.startsWith('/api/live/'))return json(res,liveErrorStatus(e),{error:String(e.message||'live execution error').slice(0,300),code:e.code||'LIVE_EXECUTION_ERROR'});
+  if(db?.sync){db.sync.lastError=e.message;save();}
+  return json(res,500,{error:e.message});
+}});
 
-(async()=>{db=await storage.init(initial(),x=>{const fresh={...initial(),...x,version:10};fresh.sync={...initial().sync,...(x?.sync||{})};fresh.tokenState=x?.tokenState||{};fresh.marketHistory=x?.marketHistory||{};fresh.holderHistory=x?.holderHistory||{};fresh.holderSnapshotStatus=x?.holderSnapshotStatus||{};fresh.moneyHoldingsStatus=x?.moneyHoldingsStatus||{};fresh.cycleScoreHistory=x?.cycleScoreHistory||{};fresh.events=x?.events||[];fresh.actors=mergeSeedActors(x?.actors||[]);return fresh});save();server.listen(PORT,()=>{console.log(`Trenches Radar listening on ${PORT} (${DATABASE_URL?'postgres':'file'})`);startLiveSubscriber();shadowRuntime=new ShadowRuntime({storage,getDb:()=>db,getSignals:signals,getActors:actorMap,refreshToken:async address=>{mergeTokenState(address,await buildTokenState(address,true));save();}});shadowRuntime.init().catch(e=>{console.error('[shadow-desk] init failed:',e.message);process.exit(1)});setTimeout(()=>refreshCycleCoverage({force:true}).catch(e=>console.error(`[cycle] startup ${e.message}`)),1500);cycleTimer=setInterval(()=>refreshCycleCoverage().catch(e=>console.error(`[cycle] timer ${e.message}`)),30*60*1000);cycleTimer.unref?.();})})().catch(e=>{console.error(e);process.exit(1)});
-process.on('SIGTERM',async()=>{shadowRuntime?.stop();try{liveSubscriber?.stop();}catch{}if(cycleTimer)clearInterval(cycleTimer);await storage.close();process.exit(0)});
+(async()=>{db=await storage.init(initial(),x=>{const fresh={...initial(),...x,version:11};fresh.sync={...initial().sync,...(x?.sync||{})};fresh.tokenState=x?.tokenState||{};fresh.marketHistory=x?.marketHistory||{};fresh.holderHistory=x?.holderHistory||{};fresh.holderSnapshotStatus=x?.holderSnapshotStatus||{};fresh.moneyHoldingsStatus=x?.moneyHoldingsStatus||{};fresh.cycleScoreHistory=x?.cycleScoreHistory||{};fresh.events=x?.events||[];fresh.actors=mergeSeedActors(x?.actors||[]);return fresh});save();server.listen(PORT,()=>{console.log(`Trenches Radar listening on ${PORT} (${DATABASE_URL?'postgres':'file'})`);startLiveSubscriber();shadowRuntime=new ShadowRuntime({storage,getDb:()=>db,getSignals:signals,getActors:actorMap,refreshToken:async address=>{mergeTokenState(address,await buildTokenState(address,true));save();}});shadowRuntime.init().then(async()=>{liveRuntime=new LiveRuntime({storage,wallet:liveWallet,policy:livePolicy,rpc:scanner.rpc.bind(scanner),getDb:()=>db,getSignals:signals,getShadowSnapshot:()=>shadowRuntime.snapshot(),refreshToken:async address=>{mergeTokenState(address,await buildTokenState(address,true));save();}});await liveRuntime.init();console.log(`[live-execution] ${liveWallet.ready()?'configured':'not configured'} · ${livePolicy.config.allowed?'allowed':'disabled'}`);}).catch(e=>{console.error('[runtime] init failed:',e.message);process.exit(1)});setTimeout(()=>refreshCycleCoverage({force:true}).catch(e=>console.error(`[cycle] startup ${e.message}`)),1500);cycleTimer=setInterval(()=>refreshCycleCoverage().catch(e=>console.error(`[cycle] timer ${e.message}`)),30*60*1000);cycleTimer.unref?.();})})().catch(e=>{console.error(e);process.exit(1)});
+process.on('SIGTERM',async()=>{liveRuntime?.stop();shadowRuntime?.stop();try{liveSubscriber?.stop();}catch{}if(cycleTimer)clearInterval(cycleTimer);await storage.close();process.exit(0)});

@@ -2,7 +2,7 @@
   "name": "robinhood-trenches-radar",
   "version": "0.4.0",
   "private": true,
-  "description": "Adaptive read-only Robinhood Chain smart-money radar",
+  "description": "Adaptive Robinhood Chain smart-money radar with isolated limited execution",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
@@ -14,7 +14,9 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@alchemy/wallet-apis": "^5.2.0",
     "pg": "^8.13.1",
+    "viem": "^2.56.5",
     "ws": "^8.18.0"
   }
 }

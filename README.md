@@ -1,6 +1,6 @@
 # Robinhood Trenches Radar — Beta operativa
 
-Radar móvil/read-only desplegado sobre Robinhood Chain. El sistema combina seguimiento on-chain de Money Wallets, confluencia independiente, Safety Gate, Exitability y calibración con retornos observados. Nunca opera una wallet ni convierte datos incompletos en una recomendación.
+Radar móvil desplegado sobre Robinhood Chain. Combina seguimiento on-chain de Money Wallets, confluencia independiente, Safety Gate, Exitability y calibración con retornos observados. Incluye un piloto autónomo opt-in, aislado y limitado; los datos incompletos nunca se convierten en una entrada.
 
 ## Qué está implementado
 
@@ -22,6 +22,9 @@ Radar móvil/read-only desplegado sobre Robinhood Chain. El sistema combina segu
 - Calibración por wallet con muestra, win rate, mediana, MAE y MFE; sin promoción automática hasta tener entradas económicas verificadas.
 - Estados finales: `IGNORE`, `WATCH`, `ENTRY_CANDIDATE`, `HIGH_CONFLUENCE`, `DO_NOT_CHASE`, `DISTRIBUTION`, `BLOCKED`.
 - PWA móvil con resumen, señales, calibración y ranking adaptativo.
+- Cuenta operativa inteligente separada, propiedad de Phantom, con sesión temporal sin permiso root.
+- Piloto real limitado a `0.005 ETH`, una posición, `0.001 ETH` por entrada y stop diario de `0.0015 ETH`.
+- Primera validación real ida/vuelta de `0.0001 ETH`, conciliación por recibo y deltas de balance, kill switch y retirada firmada por la propietaria.
 
 ## Fuentes live
 
@@ -32,7 +35,7 @@ Radar móvil/read-only desplegado sobre Robinhood Chain. El sistema combina segu
 5. **Safety / Exitability:** factories y pools Pons verificados on-chain más quotes read-only al tamaño objetivo.
 6. **Ingesta externa:** `/api/events` y `/api/token-state` para futuras fuentes sociales o de diligencia.
 
-La app no necesita seed phrase, private key ni permiso de trading.
+La app nunca necesita la seed phrase ni la private key de Phantom. La ejecución autónoma requiere una sesión separada, explícita, limitada y con caducidad.
 
 ## API mínima de integración
 
@@ -146,7 +149,7 @@ Esta variante incorpora persistencia Postgres y separación `app ↔ worker` par
 - Los endpoints de sincronización están protegidos por `INTERNAL_SYNC_TOKEN`.
 - Iconos PWA incluidos para una instalación fiable en Android.
 
-La app sigue siendo **read-only respecto a wallets** y nunca necesita claves privadas.
+El radar y Shadow Desk siguen siendo observacionales. La única ruta con dinero real es el piloto aislado descrito en [`docs/live-execution-boundary.md`](docs/live-execution-boundary.md).
 
 ## Phantom en Robinhood Chain
 
@@ -155,8 +158,9 @@ La vista `DESK` incorpora una conexión local con el proveedor EVM inyectado de 
 - solicita acceso únicamente cuando el usuario pulsa `Conectar Phantom`;
 - exige Robinhood Chain (`chainId 4663` / `0x1237`);
 - muestra la dirección EVM y el balance de RH ETH disponible para gas;
-- no transmite la dirección al backend;
-- no firma mensajes, no crea approvals y no envía transacciones;
+- transmite la dirección pública al backend sólo para comprobar la propiedad y el estado operativo;
+- solicita firmas únicamente al crear la cuenta separada, autorizar/probar/armar/parar la sesión o recuperar fondos;
+- el fondeo es una transacción explícita confirmada en Phantom;
 - nunca solicita seed phrase ni private key.
 
-Esta conexión representa `CONNECTED_READ_ONLY`, no ejecución real. La evolución prevista está documentada en [`docs/live-execution-boundary.md`](docs/live-execution-boundary.md).
+Conectar Phantom por sí solo sigue sin conceder trading. La progresión `ACCOUNT_CREATED → SESSION_AUTHORIZED → SESSION_TESTED → ARMED_FOR_ROUND_TRIP → AUTONOMOUS_LIMITED` está documentada en [`docs/live-execution-boundary.md`](docs/live-execution-boundary.md).

@@ -21,22 +21,27 @@ test('the desk compresses internal agents into five user-facing gates',()=>{
   assert.match(js,/clearInterval\(refreshTimer\)/);
 });
 
-test('the desk exposes Phantom connection without claiming live execution',()=>{
+test('the desk exposes a gated Phantom-owned live pilot',()=>{
   const html=read('index.html');
   const js=read('wallet.js');
   assert.match(html,/id="executionWallet"/);
   assert.match(html,/Phantom · Robinhood Chain/);
-  assert.match(html,/SIN PERMISO DE TRADING/);
+  assert.match(html,/PILOTO REAL LIMITADO/);
   assert.match(html,/id="walletConnect"/);
   assert.match(html,/id="walletWatchForm"/);
   assert.match(html,/id="walletWatchAddress"/);
+  for(const id of ['liveCreate','liveFund','liveAuthorize','liveTest','liveArm','liveStop','liveReclaim','liveReclaimNative','liveConsent'])assert.match(html,new RegExp(`id="${id}"`));
   assert.match(html,/Abrir fuera del visor/);
   assert.match(js,/window\.phantom\?\.ethereum/);
   assert.match(js,/eip6963:announceProvider/);
   assert.match(js,/\/api\/wallet\/balance\?address=/);
   assert.match(js,/CHAIN_ID_DECIMAL=4663/);
   assert.match(js,/wallet_switchEthereumChain/);
-  assert.doesNotMatch(js,/eth_sendTransaction|sendTransaction|personal_sign|eth_signTransaction/);
+  assert.match(js,/eth_sendTransaction/);
+  assert.match(js,/personal_sign/);
+  assert.match(js,/eth_signTypedData_v4/);
+  assert.match(js,/STOP_AND_LIQUIDATE/);
+  assert.doesNotMatch(js,/eth_signTransaction/);
   assert.match(js,/nunca te pedirá la seed phrase/i);
 });
 
