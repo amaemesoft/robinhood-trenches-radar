@@ -408,7 +408,11 @@ if(p==='/api/token-state'&&req.method==='POST'){if(!auth(req,WRITE_API_TOKEN))re
 if(p==='/api/actors/performance'&&req.method==='POST'){if(!auth(req,WRITE_API_TOKEN))return json(res,401,{error:'unauthorized'});const b=await body(req),a=db.actors.find(x=>x.id===b.actorId);if(!a)return json(res,404,{error:'actor not found'});for(const k of ['sampleSize','recentEdge','lifetimeEdge','copyability'])if(b[k]!=null)a[k]=Number(b[k]);if(b.roleScores)a.roleScores={...(a.roleScores||{}),...b.roleScores};save();queueCycleRefresh();return json(res,200,{ok:true})}
 if(staticFile(res,p))return;return json(res,404,{error:'not found'});
 }catch(e){
-  if(p.startsWith('/api/live/'))return json(res,liveErrorStatus(e),{error:String(e.message||'live execution error').slice(0,300),code:e.code||'LIVE_EXECUTION_ERROR'});
+  if(p.startsWith('/api/live/')){
+    const status=liveErrorStatus(e),message=String(e.message||'live execution error').slice(0,300),code=e.code||'LIVE_EXECUTION_ERROR';
+    console.error(`[live-api-error] ${JSON.stringify({path:p,method:req.method,status,code,message})}`);
+    return json(res,status,{error:message,code});
+  }
   if(db?.sync){db.sync.lastError=e.message;save();}
   return json(res,500,{error:e.message});
 }});
